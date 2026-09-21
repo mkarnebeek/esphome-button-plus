@@ -189,6 +189,9 @@ image:
       - logger.log:
           format: "cover art kon niet opgehaald worden"
           level: WARN
+      # Forget it, so the next media update retries rather than the guard in
+      # render_media holding us to a cover that never downloaded.
+      - lambda: 'id(cover_art_url) = "";'
 
 font:
   - file: "gfonts://Inter@600"
@@ -264,6 +267,12 @@ time:
 # The guards below stay regardless: a position above zero is taken as real, and
 # a zero is either a fresh track or a resume, told apart by the title changing.
 globals:
+  # The cover art URL currently loaded. render_media compares against this so a
+  # cover is fetched once per track rather than once per state report.
+  - id: cover_art_url
+    type: std::string
+    restore_value: false
+
   - id: media_pos_base
     type: float
     restore_value: false
@@ -529,9 +538,22 @@ script:
                 condition:
                   lambda: 'return !id(media_picture).state.empty();'
                 then:
-                  - online_image.set_url:
-                      id: cover_art
-                      url: !lambda 'return id(media_picture).state;'
+                  # render_media runs on every state report from any of the four
+                  # media sensors, which while a track plays is several times a
+                  # second. online_image::set_url() does not compare against the
+                  # URL it already has -- it always clears the cached etag and
+                  # last-modified and starts a fresh download -- so calling it
+                  # unconditionally re-fetched the same cover every couple of
+                  # seconds, and the overlapping calls logged "Image already
+                  # being updated". The URL is the only thing worth reacting to.
+                  - if:
+                      condition:
+                        lambda: 'return id(media_picture).state != id(cover_art_url);'
+                      then:
+                        - lambda: 'id(cover_art_url) = id(media_picture).state;'
+                        - online_image.set_url:
+                            id: cover_art
+                            url: !lambda 'return id(media_picture).state;'
                   - lvgl.widget.show: cover_img
                 else:
                   - lvgl.widget.hide: cover_img

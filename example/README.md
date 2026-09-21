@@ -116,6 +116,14 @@ Two more traps, both in the reference file's comments:
   and never appears.
 - `buffer_size: 4096` on the `online_image`. The 64kB default pulls the whole
   image in one loop iteration; smaller bites spread it across several.
+- **Only call `online_image.set_url` when the URL has actually changed.**
+  `set_url()` does not compare against the URL it already holds — it clears the
+  cached etag and last-modified and starts a fresh download every time. Home
+  Assistant sensors fire `on_value` on every state *report*, not only on change,
+  so a render script hung off a media player will call it several times a second
+  and re-fetch the same cover forever. The symptom is `Image already being
+  updated` in the log. The reference keeps the loaded URL in a global and
+  compares; that took a playing track from 10 downloads in 50s to 1 in 91s.
 
 ### A media progress bar that does not drift
 
