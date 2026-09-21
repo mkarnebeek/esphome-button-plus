@@ -11,6 +11,34 @@ reachable.
 
 > Unaffiliated third-party project. Not made, endorsed or supported by Button+.
 
+## About this project
+
+This repository is mostly vibecoded with Claude Code, and mostly read by me. It is
+verified to work, tested and performance-tweaked on real hardware. I have tested
+every aspect of it, but I have not mounted it on a wall yet — I am still looking for
+the right spot. I am convinced it is at daily-driver level for stability and
+performance, and I intend to use it as-is. My own ESPHome setup references this
+repository directly, so I will be pushing updates as I go.
+
+Feel free to fork it and to send PRs. I will review them (with the help of AI) in my
+own time, which can sometimes mean weeks.
+
+At the time of writing I believe this works better than the vendor-provided
+firmware: it seems more stable and more performant, and for Home Assistant users it
+integrates far better.
+
+What you get over the vendor firmware:
+
+- Better stability, especially across reboots and reconfigurations.
+- LVGL rendering, which supports far more on screen — gauges, music cover art and
+  more.
+- Tweaked for responsiveness. For example:
+  - SPI writes to the displays have been heavily optimised.
+  - Button presses fire on release, instead of waiting out the hold timeout.
+  - Pressing play updates the cover art near-instantly.
+
+I hope you have as much fun using this as I had setting it up. Enjoy!
+
 ## Status
 
 **Hardware revision 2 only.** V1 and V2 are not interchangeable: V2 moved the
@@ -235,8 +263,9 @@ built on:
 
 ## Provenance
 
-Extracted in September 2026 from a private home-automation repository, where it
-drives a Button+ V2 on a living-room wall. It is developed by being used.
+Extracted in September 2026 from a private home-automation repository, which
+consumes this package to drive a Button+ V2 for the living room. It is developed
+by being used.
 
 ## Licence
 

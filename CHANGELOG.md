@@ -35,8 +35,8 @@ moving a tag — a moved tag is invisible to anyone using `refresh: never`.
 
 ## [1.0.0] — 2026-09-21
 
-First release. Extracted from a private home-automation repository where it
-drives a Button+ V2 on a living-room wall.
+First release. Extracted from a private home-automation repository, which
+consumes this package to drive a Button+ V2 for the living room.
 
 ### Added
 
