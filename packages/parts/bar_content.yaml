@@ -1,0 +1,100 @@
+# One Button+ bar panel: the LVGL instance that drives it, and a script that
+# puts content on it.
+#
+# Included once per panel from page-engine.yaml:
+#
+#   key       panel name, e.g. bar1_left -- also the display id
+#   slot      0..5, the panel's position in a page, top-left to bottom-right
+#   rotation  270 for the left-hand panels, 90 for the right-hand ones
+#
+# The script takes what to show and what a press should mean, writes the former
+# to its own widgets and stores the latter in slot ${slot}. Pages are drawn by
+# calling these six scripts; see parts/pages.yaml.
+#
+# Nothing here knows which pages exist. That belongs to the device's own yaml,
+# so this package can be reused as-is on another Button+.
+#
+# If the message names an icon in the catalogue (mdi_icons.h) it is rendered as
+# that icon, otherwise as plain text -- so a button can show a vacuum symbol or
+# "21.5" without the caller having to say which it is. That switch uses two
+# overlaid labels rather than restyling one, because a label's font is fixed at
+# compile time. Exactly one of the two is ever visible.
+lvgl:
+  - id: ${key}_lvgl
+    displays:
+      - ${key}
+    rotation: ${rotation}
+    buffer_size: 100%
+    bg_color: 0x000000
+    pages:
+      - id: ${key}_page
+        bg_color: 0x000000
+        scrollable: false
+        scrollbar_mode: "OFF"
+        widgets:
+          # Width and DOT rather than letting the label auto-size: without them
+          # a title wider than the panel is centred and clipped at BOTH ends,
+          # which reads as a rendering fault rather than as a long title.
+          - label:
+              id: ${key}_title_lbl
+              align: TOP_MID
+              y: 2
+              width: 156
+              long_mode: DOT
+              text_align: CENTER
+              text: ""
+              text_font: bar_title
+              text_color: 0xFFFFFF
+          - label:
+              id: ${key}_icon_lbl
+              align: CENTER
+              y: 10
+              text: ""
+              text_font: mdi_icon
+              text_color: 0xFFFFFF
+          - label:
+              id: ${key}_text_lbl
+              align: CENTER
+              y: 10
+              text: ""
+              text_font: bar_message
+              text_color: 0xFFFFFF
+
+script:
+  - id: bp_slot${slot}
+    mode: restart
+    parameters:
+      title: string
+      icon: string
+      color: string
+      title_color: string
+      event: string
+      hold: string
+      go: string
+    then:
+      - lambda: |-
+          auto &s = button_plus::slots()[${slot}];
+          s.event = event;
+          s.hold = hold;
+          s.go = go;
+      - lvgl.label.update:
+          id: ${key}_title_lbl
+          text: !lambda 'return title;'
+          text_color: !lambda 'return lv_color_hex(button_plus::parse_color(title_color, 0x909090));'
+      - if:
+          condition:
+            lambda: 'return button_plus::mdi_glyph(icon) != nullptr;'
+          then:
+            - lvgl.label.update:
+                id: ${key}_icon_lbl
+                text: !lambda 'return std::string(button_plus::mdi_glyph(icon));'
+                text_color: !lambda 'return lv_color_hex(button_plus::parse_color(color, 0xFFFFFF));'
+            - lvgl.widget.show: ${key}_icon_lbl
+            - lvgl.widget.hide: ${key}_text_lbl
+          else:
+            - lvgl.label.update:
+                id: ${key}_text_lbl
+                text: !lambda 'return icon;'
+                text_color: !lambda 'return lv_color_hex(button_plus::parse_color(color, 0xFFFFFF));'
+            - lvgl.widget.show: ${key}_text_lbl
+            - lvgl.widget.hide: ${key}_icon_lbl

@@ -1,0 +1,129 @@
+# The six 160x80 ST7735S panels, two per bar module.
+#
+# Each panel gets its own display object with a real chip select on its module's
+# expander, rather than one shared object with the chip select juggled by hand.
+# The shared approach cannot work here: mipi_spi writes the panel init sequence
+# during setup(), so a display with no cs_pin sends that sequence to a null pin
+# and no panel is ever initialised.
+#
+# The geometry was established on the hardware rather than assumed, by putting a
+# different candidate on each of the six panels and drawing a border frame:
+#
+#   long axis  160  (offset_height 0, pad_height 0)
+#   short axis 132  (offset_width 24, pad_width 28)
+#
+# The long axis is the interesting one. A 132x162 GRAM would imply 162 here, and
+# that is what the datasheet geometry suggests, but 162 renders every frame as a
+# diagonal smear: the controller wraps each row two pixels later than the data
+# supplies, so the image shears by 2px per row and a border rectangle comes out
+# as a single diagonal across the panel. 164 doubles the shear, 160 is clean.
+#
+# `pad_width` and `pad_height` must be stated explicitly. ESPHome's built-in
+# ST7735 model is 128x160, so without them it computes a negative pad and
+# rejects the config with "Invalid offsets".
+#
+# The short axis offset is 24, not the 26 that would centre the band in the
+# 132-column GRAM -- the panel sits slightly off-centre, 24 before and 28 after.
+# That was pinned down by a leftover: running at 26 left GRAM columns 24 and 25
+# outside the written window, so on the two panels whose previous frame had
+# written there the old pixels survived as a thin bright line along one long
+# edge, while panels that had never written there stayed dark.
+#
+# Those offsets are asymmetric -- 24 before the band, 28 after -- and mipi_spi
+# resolves them from opposite ends depending on rotation: 270 takes
+# offset_width, 90 takes pad_width. The band sits at GRAM column 24 either way,
+# so the right-hand panels must state the mirror image of the left, 28/24 rather
+# than 24/28, to land on the same 24. Declaring all six identically leaves the
+# right-hand panels 4px out, which shows up as their text sitting slightly lower
+# than the left's. The two panels in a bar are mounted 180 apart, which is why
+# the swap is right rather than a workaround.
+#
+# Only the displays are declared here. Each panel's LVGL instance and its
+# layout live in parts/bar_content.yaml, which page-engine.yaml includes once
+# per panel -- so this file can be loaded on its own by anyone who wants the
+# six panels without the stock interface.
+
+output:
+  - {platform: gpio, id: cs_guard_bar1_left, pin: {mcp23xxx: module_j1, number: 5, inverted: true, allow_other_uses: true}}
+  - {platform: gpio, id: cs_guard_bar1_right, pin: {mcp23xxx: module_j1, number: 1, inverted: true, allow_other_uses: true}}
+  - {platform: gpio, id: cs_guard_bar2_left, pin: {mcp23xxx: module_j2, number: 5, inverted: true, allow_other_uses: true}}
+  - {platform: gpio, id: cs_guard_bar2_right, pin: {mcp23xxx: module_j2, number: 1, inverted: true, allow_other_uses: true}}
+  - {platform: gpio, id: cs_guard_bar3_left, pin: {mcp23xxx: module_j3, number: 5, inverted: true, allow_other_uses: true}}
+  - {platform: gpio, id: cs_guard_bar3_right, pin: {mcp23xxx: module_j3, number: 1, inverted: true, allow_other_uses: true}}
+
+display:
+  - platform: mipi_spi
+    id: bar1_left
+    model: ST7735
+    color_order: bgr
+    update_interval: never
+    data_rate: 40MHz
+    dimensions: {width: 80, height: 160, offset_width: 24, offset_height: 0, pad_width: 28, pad_height: 0}
+    cs_pin: {mcp23xxx: module_j1, number: 5, allow_other_uses: true}
+    dc_pin: {number: GPIO7, allow_other_uses: true}
+
+  - platform: mipi_spi
+    id: bar1_right
+    model: ST7735
+    color_order: bgr
+    update_interval: never
+    data_rate: 40MHz
+    dimensions: {width: 80, height: 160, offset_width: 28, offset_height: 0, pad_width: 24, pad_height: 0}
+    cs_pin: {mcp23xxx: module_j1, number: 1, allow_other_uses: true}
+    dc_pin: {number: GPIO7, allow_other_uses: true}
+
+  - platform: mipi_spi
+    id: bar2_left
+    model: ST7735
+    color_order: bgr
+    update_interval: never
+    data_rate: 40MHz
+    dimensions: {width: 80, height: 160, offset_width: 24, offset_height: 0, pad_width: 28, pad_height: 0}
+    cs_pin: {mcp23xxx: module_j2, number: 5, allow_other_uses: true}
+    dc_pin: {number: GPIO7, allow_other_uses: true}
+
+  - platform: mipi_spi
+    id: bar2_right
+    model: ST7735
+    color_order: bgr
+    update_interval: never
+    data_rate: 40MHz
+    dimensions: {width: 80, height: 160, offset_width: 28, offset_height: 0, pad_width: 24, pad_height: 0}
+    cs_pin: {mcp23xxx: module_j2, number: 1, allow_other_uses: true}
+    dc_pin: {number: GPIO7, allow_other_uses: true}
+
+  - platform: mipi_spi
+    id: bar3_left
+    model: ST7735
+    color_order: bgr
+    update_interval: never
+    data_rate: 40MHz
+    # See the note on bar3_right: this is the second of the two panels that
+    # register per transaction rather than holding a slot.
+    release_device: true
+    dimensions: {width: 80, height: 160, offset_width: 24, offset_height: 0, pad_width: 28, pad_height: 0}
+    cs_pin: {mcp23xxx: module_j3, number: 5, allow_other_uses: true}
+    dc_pin: {number: GPIO7, allow_other_uses: true}
+
+  - platform: mipi_spi
+    id: bar3_right
+    model: ST7735
+    color_order: bgr
+    update_interval: never
+    data_rate: 40MHz
+    # There are seven displays and the ESP32-S3 SPI host has six device slots
+    # (SOC_SPI_MAX_CS_NUM). A transient device still needs a free slot to
+    # register into, so the ceiling is five permanent holders plus one slot the
+    # rest take turns in -- overflow it and the losing panel fails every
+    # transmit with "Add device failed - err 101".
+    #
+    # So bar 3 gives up both its slots and the main display keeps one. Measured,
+    # the penalty is about 8ms per refresh -- bar3_left went 13ms to 21ms when
+    # it joined bar3_right here -- but a bar only refreshes when the page
+    # changes, so paging all six went 108ms to 116ms. The main display, which
+    # redraws on the clock, the media progress bar and the power gauge, went
+    # the other way: 80ms to 64ms.
+    release_device: true
+    dimensions: {width: 80, height: 160, offset_width: 28, offset_height: 0, pad_width: 24, pad_height: 0}
+    cs_pin: {mcp23xxx: module_j3, number: 1, allow_other_uses: true}
+    dc_pin: {number: GPIO7, allow_other_uses: true}

@@ -1,0 +1,11 @@
+# The hardware with nothing attached: no LVGL, no page engine, no contract.
+#
+# This is the composition someone takes when they want the seven panels and
+# want to drive them themselves. It is also the one most likely to break,
+# because main_display is left with no owner at all.
+esphome:
+  name: ci-hardware-only
+logger:
+
+packages:
+  button_plus: !include ../../packages/hardware.yaml

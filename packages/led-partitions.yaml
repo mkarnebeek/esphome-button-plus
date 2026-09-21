@@ -1,0 +1,71 @@
+# One light entity per LED, so each can be driven on its own.
+#
+# Requires leds.yaml, which declares the chain these partition.
+#
+# The display module's eight were mapped by lighting them one at a time, and
+# come out exactly in the order the V2 schematic implies:
+#
+#   0  left front         4  left wall, middle
+#   1  left wall, bottom   5  left wall, top
+#   2  right front         6  right wall, middle
+#   3  right wall, bottom  7  right wall, top
+#
+# Two face into the room and six face the wall, three up each side at the three
+# connector positions -- which is why index 1 and 3 are "bottom": they are the
+# foot of each column, level with the buttons.
+#
+# The bar modules follow the same left-front, left-wall, right-front, right-wall
+# order the schematic gives, confirmed on the hardware the same way.
+#
+# Home Assistant derives its entity ids from `name:`, not from `id:`, so
+# overriding the substitutions below is enough to keep an existing
+# installation's entity ids stable across a rename.
+esphome:
+  min_version: 2026.9.0
+
+substitutions:
+  bp_led_display_left_front_name:        "Display LED left front"
+  bp_led_display_left_wall_bottom_name:  "Display LED left wall bottom"
+  bp_led_display_right_front_name:       "Display LED right front"
+  bp_led_display_right_wall_bottom_name: "Display LED right wall bottom"
+  bp_led_display_left_wall_middle_name:  "Display LED left wall middle"
+  bp_led_display_left_wall_top_name:     "Display LED left wall top"
+  bp_led_display_right_wall_middle_name: "Display LED right wall middle"
+  bp_led_display_right_wall_top_name:    "Display LED right wall top"
+  bp_led_bar1_left_front_name:           "Bar 1 LED left front"
+  bp_led_bar1_left_wall_name:            "Bar 1 LED left wall"
+  bp_led_bar1_right_front_name:          "Bar 1 LED right front"
+  bp_led_bar1_right_wall_name:           "Bar 1 LED right wall"
+  bp_led_bar2_left_front_name:           "Bar 2 LED left front"
+  bp_led_bar2_left_wall_name:            "Bar 2 LED left wall"
+  bp_led_bar2_right_front_name:          "Bar 2 LED right front"
+  bp_led_bar2_right_wall_name:           "Bar 2 LED right wall"
+  bp_led_bar3_left_front_name:           "Bar 3 LED left front"
+  bp_led_bar3_left_wall_name:            "Bar 3 LED left wall"
+  bp_led_bar3_right_front_name:          "Bar 3 LED right front"
+  bp_led_bar3_right_wall_name:           "Bar 3 LED right wall"
+
+light:
+  - {platform: partition, id: led_display_left_front, name: "${bp_led_display_left_front_name}", segments: [{id: leds, from: 0, to: 0}]}
+  - {platform: partition, id: led_display_left_wall_bottom, name: "${bp_led_display_left_wall_bottom_name}", segments: [{id: leds, from: 1, to: 1}]}
+  - {platform: partition, id: led_display_right_front, name: "${bp_led_display_right_front_name}", segments: [{id: leds, from: 2, to: 2}]}
+  - {platform: partition, id: led_display_right_wall_bottom, name: "${bp_led_display_right_wall_bottom_name}", segments: [{id: leds, from: 3, to: 3}]}
+  - {platform: partition, id: led_display_left_wall_middle, name: "${bp_led_display_left_wall_middle_name}", segments: [{id: leds, from: 4, to: 4}]}
+  - {platform: partition, id: led_display_left_wall_top, name: "${bp_led_display_left_wall_top_name}", segments: [{id: leds, from: 5, to: 5}]}
+  - {platform: partition, id: led_display_right_wall_middle, name: "${bp_led_display_right_wall_middle_name}", segments: [{id: leds, from: 6, to: 6}]}
+  - {platform: partition, id: led_display_right_wall_top, name: "${bp_led_display_right_wall_top_name}", segments: [{id: leds, from: 7, to: 7}]}
+
+  - {platform: partition, id: led_bar1_left_front, name: "${bp_led_bar1_left_front_name}", segments: [{id: leds, from: 8, to: 8}]}
+  - {platform: partition, id: led_bar1_left_wall, name: "${bp_led_bar1_left_wall_name}", segments: [{id: leds, from: 9, to: 9}]}
+  - {platform: partition, id: led_bar1_right_front, name: "${bp_led_bar1_right_front_name}", segments: [{id: leds, from: 10, to: 10}]}
+  - {platform: partition, id: led_bar1_right_wall, name: "${bp_led_bar1_right_wall_name}", segments: [{id: leds, from: 11, to: 11}]}
+
+  - {platform: partition, id: led_bar2_left_front, name: "${bp_led_bar2_left_front_name}", segments: [{id: leds, from: 12, to: 12}]}
+  - {platform: partition, id: led_bar2_left_wall, name: "${bp_led_bar2_left_wall_name}", segments: [{id: leds, from: 13, to: 13}]}
+  - {platform: partition, id: led_bar2_right_front, name: "${bp_led_bar2_right_front_name}", segments: [{id: leds, from: 14, to: 14}]}
+  - {platform: partition, id: led_bar2_right_wall, name: "${bp_led_bar2_right_wall_name}", segments: [{id: leds, from: 15, to: 15}]}
+
+  - {platform: partition, id: led_bar3_left_front, name: "${bp_led_bar3_left_front_name}", segments: [{id: leds, from: 16, to: 16}]}
+  - {platform: partition, id: led_bar3_left_wall, name: "${bp_led_bar3_left_wall_name}", segments: [{id: leds, from: 17, to: 17}]}
+  - {platform: partition, id: led_bar3_right_front, name: "${bp_led_bar3_right_front_name}", segments: [{id: leds, from: 18, to: 18}]}
+  - {platform: partition, id: led_bar3_right_wall, name: "${bp_led_bar3_right_wall_name}", segments: [{id: leds, from: 19, to: 19}]}

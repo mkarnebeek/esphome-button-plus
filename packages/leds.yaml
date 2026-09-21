@@ -1,0 +1,27 @@
+# The panel's single addressable LED chain.
+#
+# One SK6805 chain runs the whole panel. It leaves the base on GPIO4 and is
+# daisy-chained through the module connectors in slot order: the display
+# module's eight LEDs first, then four per bar module.
+#
+# SK6805 is SK6812-compatible, which is why the chipset below is SK6812 rather
+# than WS2812 -- the timings differ and using the wrong one gives colour
+# corruption on long chains.
+#
+# This declares the chain as one light. Load led-partitions.yaml as well for a
+# separate light entity per LED; leave it out if you would rather drive the
+# chain as a whole, with effects.
+esphome:
+  min_version: 2026.9.0
+
+substitutions:
+  bp_leds_name: "LEDs"
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: leds
+    name: "${bp_leds_name}"
+    pin: GPIO4
+    num_leds: 20
+    chipset: SK6812
+    channel_colors: GRB

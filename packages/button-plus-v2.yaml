@@ -1,0 +1,22 @@
+# A whole Button+ V2 panel: base, display module and three bar modules.
+#
+#   packages:
+#     button_plus: github://mkarnebeek/esphome-button-plus/packages/button-plus-v2.yaml@v1.0.0
+#
+# This is the everything entry point. To take less, load the individual files
+# it lists instead -- but load either this or a set of those, never both, or
+# every id is declared twice.
+#
+# You still bring the node itself: esphome: name:, wifi: or ethernet:, api: or
+# mqtt:, ota:, logger:. This package configures the panel, not the node.
+esphome:
+  min_version: 2026.9.0
+
+packages:
+  bp_hardware:       !include hardware.yaml
+  bp_page_engine:    !include page-engine.yaml
+  bp_leds:           !include leds.yaml
+  bp_led_partitions: !include led-partitions.yaml
+  bp_sensors:        !include sensors.yaml
+  bp_diagnostics:    !include diagnostics.yaml
+  bp_lvgl_paging:    !include extras/lvgl-paging.yaml

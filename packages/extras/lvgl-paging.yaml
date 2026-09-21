@@ -1,0 +1,24 @@
+# Wires the two buttons on the display module to an LVGL instance on the main
+# display: left steps back a page, right steps forward.
+#
+# Opt-in, because the package does not otherwise care what drives the main
+# display. Load it only if yours is LVGL-driven, and override bp_main_lvgl if
+# your instance is called something other than main_lvgl.
+#
+# For a non-LVGL main display, skip this file and extend bp_page_prev and
+# bp_page_next yourself -- with display.page.show_previous, for instance.
+esphome:
+  min_version: 2026.9.0
+
+substitutions:
+  bp_main_lvgl: main_lvgl
+
+script:
+  - id: !extend bp_page_prev
+    then:
+      - lvgl.page.previous:
+          lvgl_id: ${bp_main_lvgl}
+  - id: !extend bp_page_next
+    then:
+      - lvgl.page.next:
+          lvgl_id: ${bp_main_lvgl}

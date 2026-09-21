@@ -1,0 +1,52 @@
+# One physical Button+ bar button.
+#
+# Included once per button from page-engine.yaml:
+#
+#   key       short name, e.g. bar1_left -- only used for the ids here
+#   slot      0..5, the button's position in a page
+#   expander  id of the MCP23008 for that module
+#   gp        expander pin, 6 for the left button and 2 for the right
+#
+# A press does not carry the button's own identity anywhere. It reports its slot
+# to the page engine, which looks up what the current page put there. So Home
+# Assistant never hears about "bar 1 left" -- it hears what that button means on
+# the page that was showing.
+#
+# Timing thresholds come from substitutions in parts/buttons.yaml, so the feel of
+# every button on the panel is tuned in one place.
+binary_sensor:
+  - platform: gpio
+    id: btn_${key}
+    internal: true
+    pin:
+      mcp23xxx: ${expander}
+      number: ${gp}
+      mode: INPUT_PULLUP
+      inverted: true
+
+    # Click fires on the release edge itself. It deliberately does NOT use an
+    # on_multi_click timing: a multi_click sequence only completes once its
+    # trailing OFF period has elapsed, so the event could not land until well
+    # after the button came back up, which is perceptible. on_click has no such
+    # tail -- it evaluates the press length at the moment of release.
+    #
+    # max_length stops one below the hold threshold, so the two meet at 500ms
+    # with neither a gap nor an overlap: a press can never fire both.
+    on_click:
+      min_length: ${btn_debounce}
+      max_length: ${btn_click_max}
+      then:
+        - script.execute:
+            id: bp_press
+            slot: ${slot}
+
+    on_multi_click:
+      # Hold fires while the button is still down. Unlike a click it does not
+      # wait for release: a long press is meant to feel like it has taken effect
+      # before you let go.
+      - timing:
+          - ON for at least ${btn_hold_min}
+        then:
+          - script.execute:
+              id: bp_hold
+              slot: ${slot}

@@ -1,0 +1,131 @@
+# The panel has nine buttons and they are not all the same kind of thing, so
+# they are split three ways.
+#
+# The six on the bar modules report their slot to the page engine rather than
+# their own identity; see pages.yaml. What a press means is whatever the page
+# currently showing put in that slot, so Home Assistant never hears "bar 1 left"
+# -- it hears scene_avond, or media_volume_up. Rearranging a page therefore
+# cannot break an automation.
+#
+# The two on the display module page between screens locally instead, without
+# a round trip to Home Assistant, so paging stays instant and keeps working
+# while HA is unreachable.
+#
+# The recessed CONFIG switch on the base is a service button and gets its own
+# entity so it cannot be mistaken for a user press.
+
+# Timings for every button on the panel. click_max stops one below hold_min so
+# the two meet with neither a gap nor an overlap: no press can fire both, and
+# none falls through the cracks.
+substitutions:
+  btn_debounce: 30ms
+  btn_click_max: 499ms
+  btn_hold_min: 500ms
+  bp_config_button_name: "Config button"
+
+event:
+  - platform: template
+    id: config_button_events
+    name: "${bp_config_button_name}"
+    icon: "mdi:cog-outline"
+    device_class: button
+    entity_category: diagnostic
+    event_types:
+      - click
+      - hold
+      - release
+
+# Hooks for the two buttons on the display module. Empty on purpose: this
+# package owns the panel, not whatever you put on the main display, so it
+# cannot know how to page it.
+#
+# Load extras/lvgl-paging.yaml if that display is LVGL-driven, or extend these
+# yourself for anything else. Left alone the two buttons do nothing and the
+# package still compiles -- which is the point, since requiring an LVGL id here
+# would make the whole package unusable without one.
+script:
+  - id: bp_page_prev
+    mode: restart
+    then: []
+  - id: bp_page_next
+    mode: restart
+    then: []
+
+binary_sensor:
+  # The display module's two buttons: left steps back a screen, right steps
+  # forward. They are deliberately not wired to the event entity -- paging is a
+  # local concern and there is nothing for an automation to do with it.
+  #
+  # No transition animation, and that is deliberate -- MOVE, OVER and the two
+  # FADE variants were all tried, at durations from 100ms to a full second.
+  #
+  # A screen-load animation re-renders BOTH pages and pushes the whole 320x240
+  # frame over SPI on every frame, measured at about 130ms each. Whatever
+  # duration is set, only two or three frames are ever drawn, so the screen
+  # lands at an arbitrary halfway position once and then snaps -- it reads as a
+  # glitch rather than as movement. Shortening it does not help: the frame cost
+  # is fixed, so a shorter animation simply draws fewer of them.
+  #
+  # FADE_IN and FADE_OUT are indistinguishable here: they cross-fade the same
+  # two images, one driving the alpha on the incoming page and the other on the
+  # outgoing one, with the z-order flipped to match. With both pages opaque and
+  # full screen the composite is the same either way.
+  #
+  # Nor can it be cached around. LVGL has lv_snapshot_take() for exactly this,
+  # but ESPHome neither enables LV_USE_SNAPSHOT nor exposes any way to call it.
+  # And even with rendering made free, one full frame is still roughly 50ms of
+  # SPI on its own, against the ~33ms a frame that smooth motion needs.
+  #
+  # Switching with no animation is a single redraw of about 70ms, so it is both
+  # cheaper than any of the above and looks intentional.
+  - platform: gpio
+    id: btn_display_left
+    internal: true
+    pin: {mcp23xxx: module_j0, number: 6, mode: INPUT_PULLUP, inverted: true}
+    on_click:
+      min_length: ${btn_debounce}
+      max_length: ${btn_click_max}
+      then:
+        - script.execute: bp_page_prev
+
+  - platform: gpio
+    id: btn_display_right
+    internal: true
+    pin: {mcp23xxx: module_j0, number: 2, mode: INPUT_PULLUP, inverted: true}
+    on_click:
+      min_length: ${btn_debounce}
+      max_length: ${btn_click_max}
+      then:
+        - script.execute: bp_page_next
+
+  # The CONFIG switch on the base, beside the reset button. Same click/hold/
+  # release shape and the same thresholds as the bar buttons, but on its own
+  # entity and wired to a real ESP pin rather than to an expander -- which is
+  # why it is written out here instead of reusing the shared fragment.
+  - platform: gpio
+    id: btn_config
+    internal: true
+    pin:
+      number: GPIO9
+      mode: INPUT_PULLUP
+      inverted: true
+    on_click:
+      min_length: ${btn_debounce}
+      max_length: ${btn_click_max}
+      then:
+        - event.trigger:
+            id: config_button_events
+            event_type: click
+    on_multi_click:
+      - timing:
+          - ON for at least ${btn_hold_min}
+        then:
+          - event.trigger:
+              id: config_button_events
+              event_type: hold
+          - wait_until:
+              condition:
+                binary_sensor.is_off: btn_config
+          - event.trigger:
+              id: config_button_events
+              event_type: release

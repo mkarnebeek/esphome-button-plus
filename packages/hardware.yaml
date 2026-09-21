@@ -1,0 +1,105 @@
+# Button+ V2 base hardware: the board, the two I2C buses, the SPI bus, the
+# module expanders, the seven panels and the two backlight rails.
+#
+# No LVGL, no page engine, no network. Compose this with page-engine.yaml for
+# the stock interface, or take it alone and drive the displays yourself.
+#
+# Hardware revision 2 only. V1 and V2 are not interchangeable: V2 moved the
+# display bus from IO35/36/37 to IO5/6/7 and swapped the two I2C buses around.
+# The move was forced by the PSRAM below -- octal PSRAM claims GPIO33-37 on the
+# ESP32-S3, which is exactly where V1 drove its displays. Pin assignments are
+# taken from the official V2 schematics, https://button.plus/support/docs/123
+esphome:
+  min_version: 2026.9.0
+  # Shared C++ helpers for the bar panels: the MDI icon catalogue and a colour
+  # parser.
+  #
+  # A directory, not the two files individually. A directory include keeps its
+  # own name as the prefix, so these land at src/bpv2/*.h; a file include would
+  # copy them to src/mdi_icons.h, where any other package shipping that name
+  # would silently overwrite them.
+  #
+  # ESPHome looks for `bpv2` in the consuming config directory first and only
+  # then beside this file, so the name has to be one no consumer would happen
+  # to have. Do not rename it to something generic.
+  includes:
+    - bpv2
+
+substitutions:
+  bp_main_backlight_name: "Display backlight"
+  bp_bar_backlight_name: "Bar backlight"
+
+packages:
+  bp_expanders:    !include parts/expanders.yaml
+  bp_main_display: !include parts/main_display.yaml
+  bp_bar_displays: !include parts/bar_displays.yaml
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+# Seven display buffers come to roughly 300kB, far more than internal RAM has
+# to spare, so the 8MB of octal PSRAM on the V2 base has to be declared. `mode`
+# is mandatory on the S3 because the variant supports both quad and octal.
+psram:
+  mode: octal
+  speed: 40MHz
+
+# Two buses. The module bus reaches the MCP23008 on every plugged module; the
+# sensor bus stays on the base and carries the temperature and light sensors.
+#
+# 400kHz rather than the 50kHz ESPHome defaults to on the ESP32: no display has
+# a hardware chip select, so every SPI transaction costs an I2C write to toggle
+# a chip select on an expander. At 50kHz that would dominate the frame time.
+i2c:
+  - id: bus_modules
+    sda: GPIO1
+    scl: GPIO2
+    frequency: 400kHz
+  - id: bus_sensors
+    sda: GPIO47
+    scl: GPIO48
+    frequency: 400kHz
+
+# One bus shared by all seven panels. MISO is not wired -- nothing is ever read
+# back from a display. Chip select is per-panel on an expander; see
+# parts/main_display.yaml and parts/bar_displays.yaml.
+spi:
+  clk_pin: GPIO6
+  mosi_pin: GPIO5
+
+# Both backlight rails are switched by a PNP transistor, so the outputs are
+# inverted: pulling the pin low lights the panel. GPIO3 and GPIO46 are strapping
+# pins on the ESP32-S3. That is Button+'s own design and the hardware allows for
+# it, so silence the warning rather than have it reported forever.
+output:
+  - platform: ledc
+    id: main_backlight_pwm
+    pin:
+      number: GPIO3
+      inverted: true
+      ignore_strapping_warning: true
+    frequency: 500Hz
+  - platform: ledc
+    id: bar_backlight_pwm
+    pin:
+      number: GPIO46
+      inverted: true
+      ignore_strapping_warning: true
+    frequency: 500Hz
+
+light:
+  - platform: monochromatic
+    id: main_backlight
+    name: "${bp_main_backlight_name}"
+    output: main_backlight_pwm
+    gamma_correct: 2.2
+    restore_mode: ALWAYS_ON
+  - platform: monochromatic
+    id: bar_backlight
+    name: "${bp_bar_backlight_name}"
+    output: bar_backlight_pwm
+    gamma_correct: 2.2
+    restore_mode: ALWAYS_ON

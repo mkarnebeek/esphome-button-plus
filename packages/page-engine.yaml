@@ -1,0 +1,35 @@
+# The stock Button+ interface for the six bar panels: a page engine, the six
+# panel layouts, the six physical buttons and the fonts they draw with.
+#
+# Requires hardware.yaml (it attaches LVGL to the displays declared there).
+#
+# You must provide two things of your own -- see docs/contract.md:
+#
+#   bp_events       an event entity listing every event name your pages fire
+#   bp_render_page  a script taking `page: string` that calls bp_button for
+#                   each slot that page uses
+esphome:
+  min_version: 2026.9.0
+
+packages:
+  bp_icons:   !include parts/icons.yaml
+  bp_pages:   !include parts/pages.yaml
+  bp_buttons: !include parts/buttons.yaml
+
+  # One LVGL instance and one layout per panel. Slot order is the panel order:
+  # bar 1 left, bar 1 right, bar 2 left, bar 2 right, bar 3 left, bar 3 right.
+  # The two panels in a bar are mounted 180 apart, hence the rotation swap.
+  bp_content_bar1_left:  !include {file: parts/bar_content.yaml, vars: {key: bar1_left,  slot: 0, rotation: 270}}
+  bp_content_bar1_right: !include {file: parts/bar_content.yaml, vars: {key: bar1_right, slot: 1, rotation: 90}}
+  bp_content_bar2_left:  !include {file: parts/bar_content.yaml, vars: {key: bar2_left,  slot: 2, rotation: 270}}
+  bp_content_bar2_right: !include {file: parts/bar_content.yaml, vars: {key: bar2_right, slot: 3, rotation: 90}}
+  bp_content_bar3_left:  !include {file: parts/bar_content.yaml, vars: {key: bar3_left,  slot: 4, rotation: 270}}
+  bp_content_bar3_right: !include {file: parts/bar_content.yaml, vars: {key: bar3_right, slot: 5, rotation: 90}}
+
+  # The six physical buttons, each reporting its slot rather than its identity.
+  bp_btn_bar1_left:  !include {file: parts/button.yaml, vars: {key: bar1_left,  slot: 0, expander: module_j1, gp: 6}}
+  bp_btn_bar1_right: !include {file: parts/button.yaml, vars: {key: bar1_right, slot: 1, expander: module_j1, gp: 2}}
+  bp_btn_bar2_left:  !include {file: parts/button.yaml, vars: {key: bar2_left,  slot: 2, expander: module_j2, gp: 6}}
+  bp_btn_bar2_right: !include {file: parts/button.yaml, vars: {key: bar2_right, slot: 3, expander: module_j2, gp: 2}}
+  bp_btn_bar3_left:  !include {file: parts/button.yaml, vars: {key: bar3_left,  slot: 4, expander: module_j3, gp: 6}}
+  bp_btn_bar3_right: !include {file: parts/button.yaml, vars: {key: bar3_right, slot: 5, expander: module_j3, gp: 2}}

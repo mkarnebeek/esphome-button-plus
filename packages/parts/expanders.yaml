@@ -1,0 +1,33 @@
+# One MCP23008 per plugged module. The address is strapped by the base rather
+# than by the module: A0/A1/A2 are tied off per connector, so a module's address
+# is decided purely by which slot it sits in.
+#
+#   J0  0x20  display module
+#   J1  0x21  bar 1 (top)
+#   J2  0x22  bar 2
+#   J3  0x23  bar 3 (bottom)
+#
+# Check this against the I2C scan in the first boot log before trusting it --
+# which slot the display module occupies depends on how the panel was
+# assembled, and everything else in this config keys off that assumption.
+#
+# Every module uses the same GP layout:
+#
+#   GP1  chip select, right display
+#   GP2  button, right
+#   GP5  chip select, left display (display module: its single panel)
+#   GP6  button, left
+#   GP7  LED type strap (grounded for SK6805)
+mcp23008:
+  - id: module_j0
+    i2c_id: bus_modules
+    address: 0x20
+  - id: module_j1
+    i2c_id: bus_modules
+    address: 0x21
+  - id: module_j2
+    i2c_id: bus_modules
+    address: 0x22
+  - id: module_j3
+    i2c_id: bus_modules
+    address: 0x23

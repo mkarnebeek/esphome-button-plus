@@ -1,0 +1,57 @@
+# The 320x240 ST7789V on the display module.
+#
+# Only the panel is declared here. What goes on it is yours -- this package
+# deliberately does not attach an LVGL instance, because the main display is
+# where a Button+ stops being generic.
+#
+# The panel is declared at its native 240x320 portrait and no `dimensions:`
+# block is needed -- ST7789V has no offsets. Rotation is NOT set here: LVGL
+# refuses a display that rotates itself and wants to own it, so set `rotation:`
+# on your own lvgl block instead. Because this driver reports hardware
+# rotation, LVGL still rotates via MADCTL rather than shuffling pixels in
+# software.
+#
+# The community Button+ config drives this panel as an ILI9341 and it evidently
+# works, but the panel is really an ST7789V and the stock V2 firmware carries
+# st7789 symbols and no ILI9341 driver. If it misbehaves, ili9341 is the
+# fallback worth trying.
+# Holds the chip select deasserted from early boot. The expander powers up with
+# every pin an input, so without this the line floats until the display
+# component claims it -- and a floating chip select during another panel's
+# initialisation means that panel latches this one's init sequence too.
+# Outputs are set up at priority 800, displays at 600, so this always wins.
+output:
+  - platform: gpio
+    id: cs_guard_main
+    pin:
+      mcp23xxx: module_j0
+      number: 5
+      inverted: true
+      allow_other_uses: true
+
+display:
+  - platform: mipi_spi
+    id: main_display
+    model: ST7789V
+    # The panel comes up showing the complement of every colour -- black drew as
+    # white, and red/green/blue drew as cyan/magenta/yellow. That is inversion
+    # rather than a channel swap, which would have left green untouched.
+    invert_colors: true
+    # No lambda and no update_interval, so mipi_spi compiles to the unbuffered
+    # variant and whatever you attach owns the buffer. With LVGL that means it
+    # flushes only the regions it has invalidated, instead of blanking and
+    # re-sending all 150kB every refresh.
+    update_interval: never
+    data_rate: 40MHz
+    # Holds one of the host's six SPI device slots permanently -- deliberately,
+    # see bar_displays.yaml for how the six are divided. This panel redraws far
+    # more often than the bars (clock, media progress, power gauge) and a full
+    # frame is two flush transactions, so registering the device per
+    # transaction instead cost it 16ms of every 64ms redraw.
+    cs_pin:
+      mcp23xxx: module_j0
+      number: 5
+      allow_other_uses: true
+    dc_pin:
+      number: GPIO7
+      allow_other_uses: true

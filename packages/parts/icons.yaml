@@ -1,0 +1,157 @@
+# Fonts for the bar panels.
+#
+# mdi_icon carries the catalogue that mdi_icons.h resolves names against -- the
+# two must stay in step, so adding an icon means adding a line to both. Every
+# glyph listed here is compiled into the firmware as a bitmap, which is why the
+# catalogue is curated rather than the whole MDI set: the full set would be
+# megabytes. Each icon here costs roughly 800 bytes of flash.
+#
+# The vendored webfont is a full MDI build (7431 glyphs); only the glyphs below
+# are compiled in. See NOTICE.md for its licence.
+#
+# Both paths are substitutions so you can point them elsewhere. Note the
+# asymmetry if you do: ESPHome looks for a font relative to YOUR config
+# directory first and only then relative to this file, so an override is
+# resolved from your config, while the default below is resolved from here.
+substitutions:
+  bp_mdi_font_file: "../bpv2-assets/materialdesignicons-webfont.ttf"
+  # Downloaded during `esphome config`, not at compile time -- so validating a
+  # config that uses this package needs to reach fonts.googleapis.com. Point it
+  # at a local .ttf to build offline.
+  bp_text_font_file: "gfonts://Inter@600"
+
+font:
+  - file: "${bp_mdi_font_file}"
+    id: mdi_icon
+    size: 38
+    bpp: 4
+    glyphs:
+      # navigation
+      - "󰁍" # arrow-left
+      - "󰁔" # arrow-right
+      - "󰁝" # arrow-up
+      - "󰁅" # arrow-down
+      - "󰅁" # chevron-left
+      - "󰅂" # chevron-right
+      - "󰍜" # menu
+      - "󰇘" # dots-horizontal
+      - "󰅖" # close
+      - "󰄬" # check
+      - "󰐕" # plus
+      - "󰍴" # minus
+      # lighting
+      - "󰌵" # lightbulb
+      - "󱉓" # lightbulb-group
+      - "󰚵" # lamp
+      - "󰝩" # ceiling-light
+      - "󰣝" # floor-lamp
+      - "󰤔" # track-light
+      - "󱊺" # string-lights
+      - "󰤜" # wall-sconce
+      - "󰹏" # lightbulb-off
+      # window coverings
+      - "󱡆" # curtains
+      - "󱡇" # curtains-closed
+      - "󰂬" # blinds
+      - "󱀑" # blinds-open
+      - "󱄜" # window-shutter
+      - "󱄞" # window-shutter-open
+      - "󰛙" # garage
+      - "󰛚" # garage-open
+      - "󰊙" # gate
+      - "󱅪" # gate-open
+      - "󰓛" # stop
+      # climate
+      - "󰎓" # thermostat
+      - "󰈐" # fan
+      - "󰀛" # air-conditioner
+      - "󰐸" # radiator
+      - "󰈸" # fire
+      - "󰜗" # snowflake
+      - "󰾒" # water-boiler
+      - "󰵃" # air-filter
+      - "󰖎" # water-percent
+      - "󱩃" # heat-pump
+      # media
+      - "󰝚" # music
+      - "󰐊" # play
+      - "󰏤" # pause
+      - "󰐎" # play-pause
+      - "󰙦" # stop-circle
+      - "󰒭" # skip-next
+      - "󰒮" # skip-previous
+      - "󰓃" # speaker
+      - "󰔂" # television
+      - "󰐹" # radio
+      - "󰿎" # movie-open
+      - "󰕾" # volume-high
+      - "󰖀" # volume-medium
+      - "󰖁" # volume-off
+      - "󰝝" # volume-plus
+      - "󰝞" # volume-minus
+      - "󰄘" # cast
+      - "󰍬" # microphone
+      - "󰲸" # playlist-music
+      # household
+      - "󰜍" # robot-vacuum
+      - "󰤈" # robot-vacuum-variant
+      - "󰜪" # washing-machine
+      - "󰪬" # dishwasher
+      - "󰤗" # tumble-dryer
+      - "󰃢" # broom
+      - "󰊐" # fridge
+      - "󰓞" # stove
+      - "󰳓" # toaster-oven
+      - "󰩰" # silverware-fork-knife
+      - "󰅶" # coffee
+      # rooms
+      - "󰋜" # home
+      - "󰒹" # sofa
+      - "󰋣" # bed
+      - "󰦠" # shower
+      - "󱈹" # desk
+      - "󱉟" # bookshelf
+      - "󰓍" # stairs
+      - "󰠚" # door
+      - "󰖮" # window-closed
+      - "󰶀" # home-floor-1
+      - "󰶁" # home-floor-2
+      # scenes
+      - "󰏘" # palette
+      - "󰖔" # weather-night
+      - "󰖨" # white-balance-sunny
+      - "󰖚" # weather-sunset
+      - "󰎁" # movie
+      - "󱁖" # party-popper
+      - "󰒲" # sleep
+      - "󰡉" # account-group
+      - "󱓷" # book-open-variant
+      # status
+      - "󰐥" # power
+      - "󰚥" # power-plug
+      - "󰌾" # lock
+      - "󰌿" # lock-open
+      - "󰂚" # bell
+      - "󰂛" # bell-off
+      - "󰌪" # leaf
+      - "󰉁" # flash
+      - "󰖌" # water
+      - "󰖩" # wifi
+      - "󰄋" # car
+      - "󰁹" # battery
+      - "󰒓" # cog
+      - "󰜉" # restart
+      - "󰀦" # alert
+      - "󰋼" # information
+
+  - file: "${bp_text_font_file}"
+    id: bar_title
+    size: 15
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+
+  - file: "${bp_text_font_file}"
+    id: bar_message
+    size: 22
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]

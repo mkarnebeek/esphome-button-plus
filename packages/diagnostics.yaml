@@ -1,0 +1,24 @@
+# Free PSRAM, so there is a number to watch as the interface grows.
+#
+# Every LVGL instance holds a draw buffer sized as a share of its panel, and the
+# seven of them come out of the 8MB of PSRAM on the V2 base rather than out of
+# internal RAM. Adding pages, images and fonts eats into the same pool, so this
+# is the sensor that says whether there is still room -- long before a failed
+# allocation turns into a panel that stays blank.
+#
+# Slow update on purpose: the figure barely moves except when the firmware
+# changes, and there is nothing to be gained from sampling it often.
+esphome:
+  min_version: 2026.9.0
+
+substitutions:
+  bp_psram_name: "Free PSRAM"
+
+debug:
+  update_interval: 60s
+
+sensor:
+  - platform: debug
+    psram:
+      name: "${bp_psram_name}"
+      entity_category: diagnostic

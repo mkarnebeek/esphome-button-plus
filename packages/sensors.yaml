@@ -1,0 +1,28 @@
+# The two sensors on the base itself, on the sensor bus. Default addresses are
+# correct for both parts (0x4A and 0x29), so neither is spelled out.
+esphome:
+  min_version: 2026.9.0
+
+substitutions:
+  bp_temperature_name: "Temperature"
+  bp_light_name: "Ambient light"
+
+sensor:
+  - platform: sts3x
+    id: panel_temperature
+    i2c_id: bus_sensors
+    name: "${bp_temperature_name}"
+    update_interval: 60s
+
+  # LTR-303 ambient light. This part is on the V2 schematic but Button+ do not
+  # mention it in any product text, so it may well not be populated. If it is
+  # absent the component logs a communication failure at boot and marks itself
+  # failed; the rest of the node is unaffected and this file can be left out.
+  - platform: ltr_als_ps
+    id: panel_light
+    i2c_id: bus_sensors
+    type: ALS
+    update_interval: 60s
+    ambient_light:
+      id: panel_illuminance
+      name: "${bp_light_name}"

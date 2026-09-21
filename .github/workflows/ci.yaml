@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  config:
+    name: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        file:
+          - example/demo.yaml
+          - example/home-assistant.yaml
+          - .github/ci/full.yaml
+          - .github/ci/hardware-only.yaml
+          - .github/ci/no-optional.yaml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install esphome==2026.9.0
+      - run: esphome config ${{ matrix.file }}
+
+  compile:
+    name: compile the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      # `esphome config` never exercises `esphome: includes:` -- the headers are
+      # copied into src/ at codegen time. So only a compile proves that the
+      # bpv2/ directory include resolves and that the C++ in it is sound.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/esphome
+          key: build-${{ hashFiles('packages/**') }}
+          restore-keys: build-
+      - run: pip install esphome==2026.9.0
+      - run: esphome compile example/demo.yaml
+      - name: the headers must land under src/bpv2/
+        run: |
+          src=example/.esphome/build/buttonplus-demo/src
+          test -f "$src/bpv2/button_plus.h"
+          test -f "$src/bpv2/mdi_icons.h"
+          grep -q '#include "bpv2/mdi_icons.h"' "$src/main.cpp"

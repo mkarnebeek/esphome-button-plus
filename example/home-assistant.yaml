@@ -1,0 +1,175 @@
+# The same panel, wired to Home Assistant.
+#
+# Where demo.yaml keeps everything on the device, this shows the pattern you
+# actually want in a house: pages and navigation stay local and instant, and
+# Home Assistant only hears what a press *meant*.
+#
+# Entity ids below are placeholders -- replace them with your own. The wifi and
+# api blocks use plain strings so this file validates anywhere; use !secret in
+# a real config.
+substitutions:
+  bp_home_page: home
+
+  # Replace these four.
+  ha_lights: light.living_room
+  ha_cover: cover.living_room_curtains
+  ha_media: media_player.living_room
+  ha_temperature: sensor.living_room_temperature
+
+esphome:
+  name: living-room-panel
+  friendly_name: Living room panel
+
+wifi:
+  ssid: "your-ssid"          # !secret wifi_ssid
+  password: "your-password"  # !secret wifi_password
+
+api:
+ota:
+  platform: esphome
+logger:
+
+packages:
+  button_plus: !include ../packages/button-plus-v2.yaml
+
+# ---------------------------------------------------------------------------
+# What the panel can tell Home Assistant.
+#
+# These are meanings, not buttons. Rearranging a page below cannot break an
+# automation, because no automation ever refers to a button position.
+# ---------------------------------------------------------------------------
+event:
+  - platform: template
+    id: bp_events
+    name: "Buttons"
+    device_class: button
+    event_types:
+      - lights_on
+      - lights_off
+      - lights_dim
+      - cover_open
+      - cover_close
+      - cover_stop
+      - media_play_pause
+      - media_next
+      - media_previous
+      - media_volume_up
+      - media_volume_down
+
+# ---------------------------------------------------------------------------
+# Values imported from Home Assistant, for the main screen and for the bar
+# buttons that show live readings.
+# ---------------------------------------------------------------------------
+sensor:
+  - platform: homeassistant
+    id: room_temperature
+    entity_id: ${ha_temperature}
+    on_value:
+      # Only redraw if that page is actually showing -- otherwise every update
+      # repaints six panels for nothing.
+      - if:
+          condition:
+            lambda: 'return button_plus::current_page() == "climate";'
+          then:
+            - script.execute: {id: bp_show, page: climate}
+
+text_sensor:
+  - platform: homeassistant
+    id: media_title
+    entity_id: ${ha_media}
+    attribute: media_title
+    on_value:
+      - lvgl.label.update:
+          id: now_playing
+          text: !lambda 'return x.empty() ? "Nothing playing" : x;'
+
+binary_sensor:
+  - platform: homeassistant
+    id: lights_are_on
+    entity_id: ${ha_lights}
+    on_state:
+      - if:
+          condition:
+            lambda: 'return button_plus::current_page() == "home";'
+          then:
+            - script.execute: {id: bp_show, page: home}
+
+script:
+  - id: bp_render_page
+    mode: restart
+    parameters:
+      page: string
+    then:
+      - if:
+          condition: {lambda: 'return page == "home";'}
+          then:
+            # A slot whose icon and colour depend on state. Because the binary
+            # sensor above re-renders the page, this stays in step by itself.
+            - script.execute:
+                id: bp_button
+                slot: 0
+                title: Lights
+                icon: !lambda 'return std::string(id(lights_are_on).state ? "lightbulb" : "lightbulb-off");'
+                color: !lambda 'return std::string(id(lights_are_on).state ? "amber" : "grey");'
+                title_color: grey
+                event: !lambda 'return std::string(id(lights_are_on).state ? "lights_off" : "lights_on");'
+                hold: lights_dim
+                go: ""
+            - script.execute: {id: bp_nav, slot: 1, title: Curtains, icon: curtains,   color: cyan,  go: covers}
+            - script.execute: {id: bp_nav, slot: 2, title: Music,    icon: music,      color: purple, go: media}
+            - script.execute: {id: bp_nav, slot: 3, title: Climate,  icon: thermostat, color: green, go: climate}
+
+      - if:
+          condition: {lambda: 'return page == "covers";'}
+          then:
+            - script.execute: {id: bp_act, slot: 0, title: Open,  icon: curtains,        color: amber, event: cover_open}
+            - script.execute: {id: bp_act, slot: 1, title: Close, icon: curtains-closed, color: cyan,  event: cover_close}
+            - script.execute: {id: bp_act, slot: 2, title: Stop,  icon: stop,            color: red,   event: cover_stop}
+            # Slot 4 already holds the back button.
+
+      - if:
+          condition: {lambda: 'return page == "media";'}
+          then:
+            - script.execute: {id: bp_act, slot: 0, title: Play,     icon: play-pause,     color: green,  event: media_play_pause}
+            - script.execute: {id: bp_act, slot: 1, title: Next,     icon: skip-next,      color: purple, event: media_next}
+            - script.execute: {id: bp_act, slot: 2, title: Previous, icon: skip-previous,  color: purple, event: media_previous}
+            - script.execute: {id: bp_act, slot: 3, title: Louder,   icon: volume-plus,    color: cyan,   event: media_volume_up}
+            - script.execute: {id: bp_act, slot: 5, title: Quieter,  icon: volume-minus,   color: cyan,   event: media_volume_down}
+
+      - if:
+          condition: {lambda: 'return page == "climate";'}
+          then:
+            # Text instead of an icon: any name that is not a compiled glyph is
+            # drawn as-is, which is how a live reading gets onto a button.
+            - script.execute:
+                id: bp_button
+                slot: 0
+                title: Inside
+                icon: !lambda 'char b[16]; snprintf(b, sizeof(b), "%.1fC", id(room_temperature).state); return std::string(b);'
+                color: amber
+                title_color: grey
+                event: ""
+                hold: ""
+                go: ""
+
+font:
+  - {file: "gfonts://Inter@600", id: screen_font, size: 24, bpp: 4}
+
+lvgl:
+  - id: main_lvgl
+    displays: [main_display]
+    rotation: 90
+    buffer_size: 25%
+    bg_color: 0x000000
+    theme:
+      label:
+        text_color: 0xFFFFFF
+    pages:
+      - id: now_playing_page
+        bg_color: 0x000000
+        widgets:
+          - label: {id: now_playing, x: 16, y: 100, width: 288, text: "Nothing playing", text_font: screen_font, long_mode: SCROLL_CIRCULAR}
+      - id: second_page
+        bg_color: 0x000000
+        widgets:
+          - label: {x: 16, y: 100, text: "Second screen", text_font: screen_font}

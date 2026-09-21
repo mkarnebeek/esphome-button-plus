@@ -1,0 +1,251 @@
+# A Button+ V2 that works entirely on its own.
+#
+#   esphome run example/demo.yaml
+#
+# No Home Assistant, no wifi, no secrets -- flash it over USB and the panel is
+# immediately usable. That is deliberate: it lets you prove every piece of the
+# hardware before deciding what to build on it.
+#
+# Every press does something visible on the panel itself; there is no network
+# round trip anywhere in here.
+substitutions:
+  bp_home_page: home
+
+esphome:
+  name: buttonplus-demo
+  friendly_name: Button+ demo
+
+logger:
+
+# Nothing else is needed. To put the demo on your network, add:
+#   wifi: {ssid: !secret wifi_ssid, password: !secret wifi_password}
+#   api:
+#   ota: {platform: esphome}
+
+packages:
+  # In your own config this is the remote form instead:
+  #   button_plus: github://mkarnebeek/esphome-button-plus/packages/button-plus-v2.yaml@v1.0.0
+  button_plus: !include ../packages/button-plus-v2.yaml
+
+# ---------------------------------------------------------------------------
+# Contract item 1: an event entity naming every event your pages can fire.
+#
+# With no Home Assistant nothing listens, but the entity still has to exist --
+# the page engine fires into it whenever a slot carries an event.
+# ---------------------------------------------------------------------------
+event:
+  - platform: template
+    id: bp_events
+    name: "Buttons"
+    device_class: button
+    event_types:
+      - demo_pressed
+
+# ---------------------------------------------------------------------------
+# Contract item 2: bp_render_page.
+#
+# The page engine calls this on every navigation with the page to draw. Fill
+# the slots you want; anything left alone stays blank, and on any page other
+# than home slot 4 already holds a back button.
+#
+# Because it runs on every navigation, this is also where a page's side effects
+# belong -- which is how the colour pages below drive the LEDs with no
+# automation anywhere.
+# ---------------------------------------------------------------------------
+script:
+  - id: bp_render_page
+    mode: restart
+    parameters:
+      page: string
+    then:
+      - lvgl.label.update:
+          id: demo_page_label
+          text: !lambda 'return page;'
+
+      - if:
+          condition: {lambda: 'return page == "home";'}
+          then:
+            - script.execute: {id: bp_nav, slot: 0, title: Colours, icon: palette,    color: amber,  go: colours}
+            - script.execute: {id: bp_nav, slot: 1, title: LEDs,    icon: lightbulb,  color: cyan,   go: leds}
+            - script.execute: {id: bp_nav, slot: 2, title: Sensors, icon: thermostat, color: green,  go: sensors}
+            - script.execute: {id: bp_nav, slot: 3, title: Icons,   icon: palette,    color: purple, go: icons}
+            # Slot 4 is the navigation slot and stays empty on home.
+            - script.execute: {id: bp_act, slot: 5, title: Count,   icon: check,      color: orange, event: demo_pressed}
+
+      # Colours: the menu is identical on the menu page and on each of the five
+      # result pages, so navigating never changes what the buttons offer -- only
+      # the chain colour changes underneath.
+      - if:
+          condition: {lambda: 'return page == "colours" || page.rfind("c_", 0) == 0;'}
+          then:
+            - script.execute: {id: bp_nav, slot: 0, title: Red,   icon: lightbulb,     color: red,   go: c_red}
+            - script.execute: {id: bp_nav, slot: 1, title: Green, icon: lightbulb,     color: green, go: c_green}
+            - script.execute: {id: bp_nav, slot: 2, title: Blue,  icon: lightbulb,     color: blue,  go: c_blue}
+            - script.execute: {id: bp_nav, slot: 3, title: Amber, icon: lightbulb,     color: amber, go: c_amber}
+            - script.execute: {id: bp_nav, slot: 5, title: "Off", icon: lightbulb-off, color: grey,  go: c_off}
+      - if:
+          condition: {lambda: 'return page == "c_red";'}
+          then: [{light.turn_on: {id: leds, brightness: 60%, red: 100%, green: 0%,   blue: 0%}}]
+      - if:
+          condition: {lambda: 'return page == "c_green";'}
+          then: [{light.turn_on: {id: leds, brightness: 60%, red: 0%,   green: 100%, blue: 0%}}]
+      - if:
+          condition: {lambda: 'return page == "c_blue";'}
+          then: [{light.turn_on: {id: leds, brightness: 60%, red: 0%,   green: 0%,   blue: 100%}}]
+      - if:
+          condition: {lambda: 'return page == "c_amber";'}
+          then: [{light.turn_on: {id: leds, brightness: 60%, red: 100%, green: 65%,  blue: 0%}}]
+      - if:
+          condition: {lambda: 'return page == "c_off";'}
+          then: [{light.turn_off: leds}]
+
+      # One group of the chain at a time. A wiring check, and a demonstration
+      # that the index-to-position map in packages/led-partitions.yaml is right
+      # on your unit.
+      - if:
+          condition: {lambda: 'return page == "leds" || page.rfind("led_", 0) == 0;'}
+          then:
+            - script.execute: {id: bp_nav, slot: 0, title: Display, icon: home,      color: cyan,   go: led_display}
+            - script.execute: {id: bp_nav, slot: 1, title: Bar 1,   icon: lightbulb, color: green,  go: led_bar1}
+            - script.execute: {id: bp_nav, slot: 2, title: Bar 2,   icon: lightbulb, color: amber,  go: led_bar2}
+            - script.execute: {id: bp_nav, slot: 3, title: Bar 3,   icon: lightbulb, color: purple, go: led_bar3}
+            - script.execute: {id: bp_nav, slot: 5, title: "Off",   icon: lightbulb-off, color: grey, go: leds}
+            # Chain on but black, then just this group lit -- addressable_set
+            # takes a range, so no per-LED bookkeeping is needed.
+            - light.turn_on: {id: leds, brightness: 100%, red: 0%, green: 0%, blue: 0%}
+            - if:
+                condition: {lambda: 'return page != "leds";'}
+                then:
+                  - light.addressable_set:
+                      id: leds
+                      range_from: !lambda |-
+                        if (page == "led_bar1") return 8;
+                        if (page == "led_bar2") return 12;
+                        if (page == "led_bar3") return 16;
+                        return 0;
+                      range_to: !lambda |-
+                        if (page == "led_bar1") return 11;
+                        if (page == "led_bar2") return 15;
+                        if (page == "led_bar3") return 19;
+                        return 7;
+                      red: 100%
+                      green: 100%
+                      blue: 100%
+
+      # Slots can carry text instead of an icon: anything that is not an
+      # installed MDI name is rendered as-is. That is what makes live readings
+      # work without a second mechanism.
+      - if:
+          condition: {lambda: 'return page == "sensors";'}
+          then:
+            - script.execute:
+                id: bp_button
+                slot: 0
+                title: Temperature
+                icon: !lambda 'char b[16]; snprintf(b, sizeof(b), "%.1fC", id(panel_temperature).state); return std::string(b);'
+                color: amber
+                title_color: grey
+                event: ""
+                hold: ""
+                go: ""
+            - script.execute:
+                id: bp_button
+                slot: 1
+                title: Light
+                icon: !lambda 'char b[16]; snprintf(b, sizeof(b), "%.0flx", id(panel_illuminance).state); return std::string(b);'
+                color: cyan
+                title_color: grey
+                event: ""
+                hold: ""
+                go: ""
+            - script.execute:
+                id: bp_button
+                slot: 2
+                title: Uptime
+                icon: !lambda 'char b[16]; snprintf(b, sizeof(b), "%.0fm", id(demo_uptime).state / 60.0f); return std::string(b);'
+                color: green
+                title_color: grey
+                event: ""
+                hold: ""
+                go: ""
+
+      # A page that is only icons, to browse what the built-in font carries.
+      - if:
+          condition: {lambda: 'return page == "icons";'}
+          then:
+            - script.execute: {id: bp_nav, slot: 0, title: Rooms,   icon: sofa,         color: amber,  go: icons}
+            - script.execute: {id: bp_nav, slot: 1, title: Climate, icon: thermostat,   color: red,    go: icons}
+            - script.execute: {id: bp_nav, slot: 2, title: Media,   icon: music,        color: purple, go: icons}
+            - script.execute: {id: bp_nav, slot: 3, title: Covers,  icon: curtains,     color: cyan,   go: icons}
+            - script.execute: {id: bp_nav, slot: 5, title: Chores,  icon: robot-vacuum, color: green,  go: icons}
+
+
+# ---------------------------------------------------------------------------
+# The main display. Two pages, so the display module's own two buttons page
+# between them -- that wiring comes from packages/extras/lvgl-paging.yaml,
+# which button-plus-v2.yaml loads and which expects an instance called
+# main_lvgl.
+# ---------------------------------------------------------------------------
+font:
+  - {file: "gfonts://Inter@600", id: demo_font_big,   size: 34, bpp: 4}
+  - {file: "gfonts://Inter@600", id: demo_font,       size: 20, bpp: 4}
+  - {file: "gfonts://Inter@400", id: demo_font_small, size: 15, bpp: 4}
+
+lvgl:
+  - id: main_lvgl
+    displays: [main_display]
+    rotation: 90
+    buffer_size: 25%
+    bg_color: 0x000000
+    theme:
+      label:
+        text_color: 0xFFFFFF
+    pages:
+      - id: demo_status_page
+        bg_color: 0x000000
+        widgets:
+          - label: {x: 16, y: 14, text: "Button+ V2", text_font: demo_font_big}
+          - label: {x: 16, y: 58, text: "ESPHome demo", text_font: demo_font_small, text_color: 0x888888}
+          - label: {x: 16, y: 96, text: "page", text_font: demo_font_small, text_color: 0x888888}
+          - label: {id: demo_page_label, x: 16, y: 114, text: "home", text_font: demo_font, text_color: 0x4FC3F7}
+          - label: {id: demo_temp_label, x: 16, y: 152, text: "--", text_font: demo_font}
+          - label: {id: demo_lux_label,  x: 16, y: 180, text: "--", text_font: demo_font}
+          - label: {x: 16, y: 214, text: "display buttons page this screen", text_font: demo_font_small, text_color: 0x666666}
+
+      - id: demo_layout_page
+        bg_color: 0x000000
+        widgets:
+          - label: {x: 16, y: 12, text: "Slot layout", text_font: demo_font, text_color: 0x4FC3F7}
+          - label: {x: 40,  y: 58,  text: "slot 0", text_font: demo_font}
+          - label: {x: 180, y: 58,  text: "slot 1", text_font: demo_font}
+          - label: {x: 40,  y: 100, text: "slot 2", text_font: demo_font}
+          - label: {x: 180, y: 100, text: "slot 3", text_font: demo_font}
+          - label: {x: 40,  y: 142, text: "slot 4", text_font: demo_font, text_color: 0xFFB74D}
+          - label: {x: 180, y: 142, text: "slot 5", text_font: demo_font}
+          - label: {x: 16, y: 190, text: "slot 4 is the back button", text_font: demo_font_small, text_color: 0xFFB74D}
+          - label: {x: 16, y: 210, text: "on every page but home", text_font: demo_font_small, text_color: 0x666666}
+
+sensor:
+  - platform: uptime
+    id: demo_uptime
+    internal: true
+    update_interval: 60s
+
+  - platform: template
+    id: demo_temp_mirror
+    internal: true
+    update_interval: 60s
+    lambda: 'return id(panel_temperature).state;'
+    on_value:
+      - lvgl.label.update:
+          id: demo_temp_label
+          text: !lambda 'char b[16]; snprintf(b, sizeof(b), "%.1f C", x); return std::string(b);'
+  - platform: template
+    id: demo_lux_mirror
+    internal: true
+    update_interval: 60s
+    lambda: 'return id(panel_illuminance).state;'
+    on_value:
+      - lvgl.label.update:
+          id: demo_lux_label
+          text: !lambda 'char b[16]; snprintf(b, sizeof(b), "%.0f lx", x); return std::string(b);'

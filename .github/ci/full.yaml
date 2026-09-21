@@ -1,0 +1,42 @@
+# Everything, loaded locally. Mirrors what a consumer gets from
+# packages/button-plus-v2.yaml.
+#
+# These harnesses sit in .github/ci/ on purpose: that is not a parent of
+# packages/, so ESPHome's "config dir first, then beside the declaring file"
+# path resolution genuinely falls through to the second case -- exactly as it
+# will for someone consuming this over github://.
+esphome:
+  name: ci-full
+logger:
+
+packages:
+  button_plus: !include ../../packages/button-plus-v2.yaml
+
+event:
+  - platform: template
+    id: bp_events
+    name: "Buttons"
+    device_class: button
+    event_types: [ci_event]
+
+script:
+  - id: bp_render_page
+    mode: restart
+    parameters:
+      page: string
+    then:
+      - script.execute: {id: bp_act, slot: 0, title: CI, icon: check, color: green, event: ci_event}
+
+font:
+  - {file: "gfonts://Inter@600", id: ci_font, size: 20, bpp: 4}
+
+lvgl:
+  - id: main_lvgl
+    displays: [main_display]
+    rotation: 90
+    buffer_size: 25%
+    pages:
+      - id: ci_page_one
+        widgets: [{label: {x: 10, y: 10, text: "one", text_font: ci_font}}]
+      - id: ci_page_two
+        widgets: [{label: {x: 10, y: 10, text: "two", text_font: ci_font}}]

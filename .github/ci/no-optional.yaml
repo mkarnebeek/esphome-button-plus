@@ -1,0 +1,29 @@
+# Hardware plus the page engine, and nothing else -- no LEDs, no sensors, no
+# diagnostics, and no LVGL paging.
+#
+# Proves the page engine stands on its own, and that bp_page_prev/bp_page_next
+# are genuinely optional: nothing here declares an LVGL instance for the main
+# display, so if the empty hook scripts ever regain a hard reference to one,
+# this harness fails.
+esphome:
+  name: ci-no-optional
+logger:
+
+packages:
+  bp_hardware:    !include ../../packages/hardware.yaml
+  bp_page_engine: !include ../../packages/page-engine.yaml
+
+event:
+  - platform: template
+    id: bp_events
+    name: "Buttons"
+    device_class: button
+    event_types: [ci_event]
+
+script:
+  - id: bp_render_page
+    mode: restart
+    parameters:
+      page: string
+    then:
+      - script.execute: {id: bp_nav, slot: 0, title: CI, icon: check, color: green, go: home}
