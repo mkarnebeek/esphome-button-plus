@@ -24,6 +24,19 @@ not redistributed by this repository.
 - Project: Inter, by Rasmus Andersson — https://rsms.me/inter/
 - Licence: SIL Open Font License 1.1
 
+## ESPhome_ButtonPlus (V1)
+
+https://github.com/dixi83/ESPhome_ButtonPlus — MIT licensed.
+
+The original ESPHome project for the Button+, targeting hardware revision 1. It
+was the starting point for this repository: its documentation of the module
+topology (an MCP23008 per module, addressed by base slot, with a common GP
+layout for chip selects and buttons) carried over directly to V2.
+
+No code is copied from it. V1 and V2 differ in their GPIO assignments, their I2C
+bus roles and their main display controller, so every pin here was taken from
+the V2 schematics instead.
+
 ## Button+
 
 This is an unaffiliated, third-party project. It is not made, endorsed or

@@ -202,6 +202,34 @@ substitution, the `button_plus::` C++ helpers, slot semantics, the contract, and
 the default `name:` strings (because those decide entity ids). See
 [CHANGELOG.md](CHANGELOG.md).
 
+## Credits
+
+**[dixi83/ESPhome_ButtonPlus](https://github.com/dixi83/ESPhome_ButtonPlus)** got
+there first. That project is the original proof that a Button+ can run ESPHome at
+all, and it was the starting point for this one — the module topology it
+documents (one MCP23008 per module, addressed by base slot, with the same GP
+layout for chip selects and buttons throughout) is what made the V2 bring-up a
+matter of hours rather than guesswork. MIT licensed.
+
+It targets **V1**, and V1 and V2 are not pin-compatible, so none of its GPIO
+assignments carry over — see [docs/hardware.md](docs/hardware.md). It also drives
+the main panel as an ILI9341; on V2 that panel is an ST7789V, which matters for
+gamma, power rails and mirroring. Those differences are where this repository
+diverges, and neither is a criticism of a project that predates the V2
+schematics entirely.
+
+**[Button+](https://button.plus/)** publish the hardware documentation this is
+built on:
+
+- [V2 schematics and pinout](https://button.plus/support/docs/123) — the source
+  for every GPIO in `packages/hardware.yaml`, including the IO5/6/7 display bus
+  and the swapped I²C buses that distinguish V2 from V1
+- [Support documentation](https://button.plus/support) — module layout and
+  assembly
+- [Firmware downloads](https://button.plus/support/firmware) — the stock
+  firmware, worth keeping a copy of before flashing ESPHome. V2 builds are
+  suffixed `-V2` and must not be crossed with V1 builds.
+
 ## Provenance
 
 Extracted in September 2026 from a private home-automation repository, where it

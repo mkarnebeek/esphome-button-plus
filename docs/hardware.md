@@ -15,7 +15,9 @@ these cost real debugging; they are written down so nobody has to repeat it.
 | Bar backlight (PNP, inverted) | 46 |
 | Main backlight (PNP, inverted) | 3 |
 
-From the [official V2 schematics](https://button.plus/support/docs/123).
+From the [official V2 schematics](https://button.plus/support/docs/123). Button+
+also publish [firmware downloads](https://button.plus/support/firmware) — take a
+copy of the stock build before flashing ESPHome if you might want to go back.
 
 **V2 is not V1.** V2 moved the display bus off IO35/36/37 and swapped the two
 I²C buses, forced by the octal PSRAM — octal claims GPIO33-37 on the ESP32-S3,
@@ -45,6 +47,12 @@ display, J1-J3 `0x21`-`0x23` bars), with the same GP layout throughout:
 Check this against the I²C scan in your first boot log — which slot the display
 module occupies depends on how the panel was assembled, and everything keys off
 it.
+
+This topology is unchanged from V1 and is documented in
+[dixi83/ESPhome_ButtonPlus](https://github.com/dixi83/ESPhome_ButtonPlus), which
+worked it out first. **Its GPIO numbers do not carry over**: V1 drove the
+displays on IO35/36/37 and used the opposite assignment for the two I²C buses.
+Octal PSRAM claims GPIO33-37 on the ESP32-S3, which is what forced the move.
 
 Each panel also gets a **CS guard**: a `gpio` output on the same expander pin,
 `inverted: true`. The expander powers up with every pin an input, so without it
