@@ -1,0 +1,761 @@
+# The living-room panel this package was written for -- published as reference,
+# not as a template.
+#
+# THIS FILE DOES NOT RUN AS-IS. It is lifted from a private repository and still
+# refers to things that do not exist here: a house base layer at common/common/
+# (wifi, api, ota, logger), Home Assistant entities from that house, and an
+# image resizer on its LAN. Read it, take the ideas, do not copy it wholesale.
+# For something you can actually flash, see demo.yaml or home-assistant.yaml.
+#
+# It is here because two things in it are hard to work out from scratch, and
+# neither is obvious from the package documentation:
+#
+#   * Album art. The panel cannot decode a full-size cover -- ESPHome's JPEG
+#     callback draws one pixel per call, so a 640x640 image is 409600 calls and
+#     roughly 2.3 seconds with the main loop stopped, which loses button presses
+#     because the expanders are polled from that same loop. An 88x88 image is
+#     43ms. See the `image:` block and the comment above it.
+#
+#   * A media progress bar that survives seeking, pausing and track changes
+#     without polling. Home Assistant reports a position and the timestamp it
+#     was measured at; the panel reconstructs the rest locally. See the
+#     `globals:` block and render_progress.
+#
+# The UI strings and event names are Dutch, because the house is. That is also
+# the point of the event names: Home Assistant hears `scene_avond`, never
+# `bar1_right_click`, so the pages below can be rearranged freely.
+#
+# The one change from the original is the image resizer's hostname, replaced
+# with a placeholder.
+
+substitutions:
+  slug: woonkamer-buttonplus
+  name: Woonkamer buttonplus
+  desc: Button+ V2 base with a display module and 3 bar modules
+
+packages:
+  # The house base layer: name/comment, api, ota, wifi, logger, uptime, restart.
+  # Declared first so both the Button+ package and this file override it --
+  # the same precedence the local device package used to give it.
+  #
+  # Nested under its own key rather than merged with `<<:`, because a YAML merge
+  # key is appended after every explicitly written key regardless of where it
+  # appears, which would put the base layer last and silently invert this.
+  base:
+    packages: !include_dir_named common/common
+
+  # Generic Button+ V2 hardware and page engine, from the public repo -- which
+  # is proven by this panel rather than the other way round.
+  #
+  # Pinned to a tag, deliberately, unlike the athom packages elsewhere here.
+  # Both repos are mine, so floating gains nothing and costs plenty: an
+  # experimental commit would otherwise be live in the next `esphome config`,
+  # including the one inside an unrelated Home Assistant deploy.
+  #
+  # refresh: never is safe because the ref is immutable. The cache key is
+  # sha256(url@ref), so bumping the ref below clones afresh by itself -- and
+  # every ref ever used stays on disk as an instant offline rollback.
+  #
+  # To upgrade: publish a tag, change this line, diff `esphome config` against
+  # the previous output, then flash. Never move a published tag.
+  button_plus:
+    url: https://github.com/mkarnebeek/esphome-button-plus.git
+    ref: v1.0.0
+    refresh: never
+    files:
+      - packages/button-plus-v2.yaml
+
+# Everything below is what makes this panel the living-room one. The packages
+# above are the hardware and the machinery to drive it, and are meant to stay
+# free of anything woonkamer-specific so a second Button+ can reuse them.
+#
+# Two things are required of this file by the generic side:
+#
+#   bp_events       the event entity, listing every event name the pages fire
+#   bp_render_page  fills the slots for a page, called by the page engine
+#
+# ---------------------------------------------------------------------------
+# The bar buttons
+# ---------------------------------------------------------------------------
+#
+# Home Assistant is told what a press MEANS, not which button was pressed. That
+# keeps the two sides independent: a page can be rearranged here without
+# touching any automation, and an automation reads scene_avond rather than
+# bar1_right_click.
+event:
+  - platform: template
+    id: bp_events
+    name: "Knoppen"
+    icon: "mdi:gesture-tap-button"
+    device_class: button
+    event_types:
+      - scene_aan
+      - scene_avond
+      - scene_film
+      - scene_max
+      - scene_auto_toggle
+      - cover_open
+      - cover_close
+      - cover_stop
+      - zonwering_toggle
+      - vacuum_keuken
+      - vacuum_keuken_woonkamer
+      - vacuum_alles
+      - vacuum_pause
+      - vacuum_dock
+      - media_play_pause
+      - media_next
+      - media_volume_down
+      - media_volume_up
+      - media_off
+
+# Whether automatic scene selection is on, so the Auto button can show it.
+# Imported rather than assumed: the panel is not the only thing that changes it.
+binary_sensor:
+  - platform: homeassistant
+    id: auto_scene
+    entity_id: switch.woonkamer_automatic_scene
+    internal: true
+    on_state:
+      # Only worth redrawing if that button is actually on screen.
+      - if:
+          condition:
+            lambda: 'return button_plus::current_page() == "scenes";'
+          then:
+            - script.execute:
+                id: bp_show
+                page: scenes
+
+# ---------------------------------------------------------------------------
+# The main display
+# ---------------------------------------------------------------------------
+#
+# Two screens, stepped through with the two buttons on the display module
+# itself:
+#
+#   home   clock, date and what is playing in the living room, with cover art
+#   power  a meter for sensor.power_effective_in_out, the net exchange with the
+#          grid -- positive while importing, negative while exporting
+#
+# The two buttons page locally rather than going out to Home Assistant and back,
+# so paging stays instant and keeps working while HA is unreachable.
+#
+# LVGL earns its place here: the lambda this replaced blanked and re-sent the
+# whole 320x240 frame on every refresh, about 70ms of blocked main loop. LVGL
+# invalidates only what changed, so the clock ticking over costs a fraction of
+# that and the buttons keep getting polled.
+# Needed by the online_image below. Plain HTTP on purpose: ESPHome opens a
+# connection with DNS, TCP connect and any TLS handshake back to back without
+# feeding the watchdog, so TLS would block the main loop for longer than the
+# decoding this whole arrangement exists to avoid.
+http_request:
+  verify_ssl: false
+  timeout: 10s
+
+image:
+  # Album art, fetched at runtime rather than compiled in. The url here is only
+  # a placeholder to satisfy the schema; the real one arrives from Home
+  # Assistant each time the track changes. AUTO lets the decoder follow the
+  # Content-Type.
+  #
+  # It comes via a resizer on the LAN rather than straight from Home
+  # Assistant, which serves 640x640. ESPHome's JPEG callback draws one pixel per
+  # call, so 640x640 is 409600 calls and about 2.3 seconds with the main loop
+  # stopped -- long enough to miss a button press entirely, because the
+  # expanders are polled from that same loop. At 88x88 it is 7744 calls, roughly
+  # 43ms, and the transfer drops from 80kB to under 2kB.
+  - platform: online_image
+    id: cover_art
+    url: "http://imageproxy.lan:8088/"
+    format: AUTO
+    type: RGB565
+    resize: 88x88
+    update_interval: never
+    # How much is read from the socket per loop iteration. The 64kB default
+    # pulls an image this size down in one go; smaller bites spread the transfer
+    # across iterations instead of holding the loop for the whole download.
+    buffer_size: 4096
+    on_download_finished:
+      # Re-set the source rather than only redrawing. ESPHome builds the
+      # lv_image_dsc lazily, when something asks for it, and that happens when
+      # the widget is given its src -- at startup, while the image is still
+      # empty and therefore 0x0. Without this LVGL keeps using that 0x0
+      # description and nothing appears, however often you redraw.
+      - lvgl.image.update:
+          id: cover_img
+          src: cover_art
+      - lvgl.widget.redraw: cover_img
+    on_error:
+      - logger.log:
+          format: "cover art kon niet opgehaald worden"
+          level: WARN
+
+font:
+  - file: "gfonts://Inter@600"
+    id: font_clock
+    size: 68
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+  - file: "gfonts://Inter"
+    id: font_date
+    size: 17
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+  - file: "gfonts://Inter@600"
+    id: font_media
+    size: 18
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+  - file: "gfonts://Inter"
+    id: font_media_sub
+    size: 15
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+  - file: "gfonts://Inter@600"
+    id: font_value
+    size: 42
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+  - file: "gfonts://Inter"
+    id: font_scale
+    size: 12
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+  - file: "gfonts://Inter"
+    id: font_footer
+    size: 13
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+
+# The clock comes from Home Assistant rather than SNTP: the panel is useless
+# without HA anyway, and this avoids a second time source to keep in step.
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time:
+      - seconds: 0
+        then:
+          - script.execute: render_clock
+
+# Home Assistant does not tick media_position: it republishes it on a track
+# change, a seek or a pause, and otherwise leaves it alone. To get a bar that
+# actually moves, the last reported position is kept together with the moment it
+# arrived, and the elapsed time is worked out from there.
+#
+# The moment it arrived comes from media_position_updated_at, not from watching
+# media_position itself. Skipping to the next track sets the position back to 0,
+# and the previous track was almost certainly also sitting at a reported 0 --
+# so the value never changes, on_value never fires, and the bar would carry on
+# counting from the old reference. The timestamp changes on every republish,
+# which is precisely what it is for.
+#
+# The source is media_player.woonkamer_2, the Music Assistant entity, and not
+# media_player.woonkamer, the Sonos one -- both drive the same speaker. Sonos
+# reports a position of 0 for the whole track, only republishes it on a pause or
+# a track change, and never registers a seek at all; forcing a poll with
+# homeassistant.update_entity does not help. Music Assistant keeps the position
+# current, seeks included. Measured on the Sonos entity, for the record:
+#
+#   playing   position 0,  timestamp frozen at the start of the track
+#   paused    position 53, timestamp bumped   -- the real position
+#   resumed   position 0,  timestamp bumped   -- the position is simply lost
+#   seeked    no change at all
+#
+# The guards below stay regardless: a position above zero is taken as real, and
+# a zero is either a fresh track or a resume, told apart by the title changing.
+globals:
+  - id: media_pos_base
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: media_pos_ref
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: media_elapsed
+    type: float
+    restore_value: false
+    initial_value: '0'
+  - id: media_track
+    type: std::string
+    restore_value: false
+
+sensor:
+  - platform: homeassistant
+    id: media_position
+    entity_id: media_player.woonkamer_2
+    attribute: media_position
+    internal: true
+    # Deliberately does not touch the reference. A reported position is only
+    # meaningful together with the reason it was reported, and that lives in the
+    # media_position_updated_at handler below -- which fires on the same push.
+    # Setting the base here as well would stamp it to the bogus 0 of a resume.
+    on_value:
+      - script.execute: render_progress
+
+  - platform: homeassistant
+    id: media_duration
+    entity_id: media_player.woonkamer_2
+    attribute: media_duration
+    internal: true
+    on_value:
+      - script.execute: render_progress
+
+  - platform: homeassistant
+    id: grid_power
+    entity_id: sensor.power_effective_in_out
+    internal: true
+    on_value:
+      # Clamped because the gauge stops at +/-5kW while the sensor does
+      # occasionally go past it; without this the needle leaves the scale.
+      - lvgl.indicator.update:
+          id: power_needle
+          value: !lambda 'return clamp(x, -5000.0f, 5000.0f);'
+      - lvgl.label.update:
+          id: power_value
+          text: !lambda |-
+            if (isnan(x)) return std::string("--");
+            return str_sprintf("%.0f", x);
+          text_color: !lambda 'return x < 0 ? lv_color_hex(0x30C060) : lv_color_hex(0xE8A030);'
+      - lvgl.label.update:
+          id: power_caption
+          text: !lambda |-
+            if (isnan(x)) return std::string("wachten op Home Assistant");
+            return std::string(x < 0 ? "W terug naar het net" : "W van het net");
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: wifi_ip
+      internal: true
+      on_value:
+        - lvgl.label.update:
+            id: footer
+            text: !lambda 'return "${name}  .  " + x;'
+
+  - platform: homeassistant
+    id: media_state
+    entity_id: media_player.woonkamer_2
+    internal: true
+    on_value:
+      - script.execute: render_media
+  - platform: homeassistant
+    id: media_title
+    entity_id: media_player.woonkamer_2
+    attribute: media_title
+    internal: true
+    on_value:
+      # A different title means a different track, which always starts at zero.
+      # This also settles the ordering: the title and the position timestamp
+      # arrive separately, and whichever lands second wins -- so forcing zero
+      # here keeps a track change from being mistaken for a resume.
+      #
+      # The comparison is not redundant. ESPHome calls on_value on every publish
+      # rather than only on a change, and Home Assistant re-sends every
+      # subscribed attribute whenever the entity changes at all -- so resuming
+      # re-delivers the same title, and without this the bar would be reset to
+      # zero by the very event it is meant to survive.
+      - lambda: |-
+          if (x != id(media_track)) {
+            id(media_track) = x;
+            id(media_pos_base) = 0;
+            id(media_pos_ref) = millis();
+          }
+      - script.execute: render_media
+  - platform: homeassistant
+    id: media_artist
+    entity_id: media_player.woonkamer_2
+    attribute: media_artist
+    internal: true
+    on_value:
+      - script.execute: render_media
+  # Only the change matters here, not the value: whenever Home Assistant
+  # republishes the position this restamps the reference so the bar restarts
+  # from whatever was reported rather than continuing from the last track.
+  - platform: homeassistant
+    id: media_position_updated
+    entity_id: media_player.woonkamer_2
+    attribute: media_position_updated_at
+    internal: true
+    on_value:
+      - lambda: |-
+          float p = id(media_position).state;
+          if (std::isnan(p)) p = 0;
+          if (p > 0) {
+            id(media_pos_base) = p;
+          } else {
+            id(media_pos_base) = id(media_elapsed);
+          }
+          id(media_pos_ref) = millis();
+      - script.execute: render_progress
+
+  # Already a complete URL pointing at the resizer, composed in Home Assistant.
+  - platform: homeassistant
+    id: media_picture
+    entity_id: sensor.woonkamer_buttonplus_albumhoes
+    attribute: url
+    internal: true
+    on_value:
+      - script.execute: render_media
+
+# Only while playing: paused or stopped the bar should sit still, and there is
+# nothing to redraw.
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(media_state).state == "playing";'
+          then:
+            - script.execute: render_progress
+
+script:
+  # The pages. Slot order is the panel order: bar 1 left, bar 1 right, bar 2
+  # left, bar 2 right, bar 3 left, bar 3 right. Slot 4 is left out on purpose
+  # except on home -- the page engine puts a back button there.
+  #
+  # bp_nav goes to another page, bp_act fires an event; a slot that is not
+  # mentioned stays blank. Both are thin wrappers over bp_button, which is there
+  # for the rarer cases -- a hold action, or a title in a non-default colour.
+  - id: bp_render_page
+    mode: restart
+    parameters:
+      page: string
+    then:
+      - if:
+          condition: { lambda: 'return page == "home";' }
+          then:
+            - script.execute: { id: bp_nav, slot: 0, title: Scenes,     icon: palette,      color: amber,  go: scenes }
+            - script.execute: { id: bp_nav, slot: 1, title: Gordijnen,  icon: curtains,     color: cyan,   go: gordijnen }
+            - script.execute: { id: bp_nav, slot: 2, title: Stofzuiger, icon: robot-vacuum, color: green,  go: stofzuiger }
+            - script.execute: { id: bp_nav, slot: 3, title: Muziek,     icon: music,        color: purple, go: muziek }
+
+      - if:
+          condition: { lambda: 'return page == "scenes";' }
+          then:
+            - script.execute: { id: bp_act, slot: 0, title: Aan,   icon: lightbulb,           color: amber,  event: scene_aan }
+            - script.execute: { id: bp_act, slot: 1, title: Avond, icon: sofa,                color: orange, event: scene_avond }
+            - script.execute: { id: bp_act, slot: 2, title: Film,  icon: movie-open,          color: purple, event: scene_film }
+            - script.execute: { id: bp_act, slot: 3, title: Max,   icon: white-balance-sunny, color: white,  event: scene_max }
+            # Reflects the switch rather than toggling it blind.
+            - script.execute:
+                id: bp_act
+                slot: 5
+                title: Auto
+                icon: !lambda 'return std::string(id(auto_scene).state ? "check" : "close");'
+                color: !lambda 'return std::string(id(auto_scene).state ? "green" : "grey");'
+                event: scene_auto_toggle
+
+      - if:
+          condition: { lambda: 'return page == "gordijnen";' }
+          then:
+            - script.execute: { id: bp_act, slot: 0, title: Open,      icon: curtains,        color: amber, event: cover_open }
+            - script.execute: { id: bp_act, slot: 1, title: Dicht,     icon: curtains-closed, color: blue,  event: cover_close }
+            - script.execute: { id: bp_act, slot: 2, title: Stop,      icon: stop,            color: grey,  event: cover_stop }
+            - script.execute: { id: bp_act, slot: 3, title: Zonwering, icon: window-shutter,  color: cyan,  event: zonwering_toggle }
+
+      - if:
+          condition: { lambda: 'return page == "stofzuiger";' }
+          then:
+            - script.execute: { id: bp_act, slot: 0, title: Keuken,              icon: silverware-fork-knife, color: cyan,  event: vacuum_keuken }
+            - script.execute: { id: bp_act, slot: 1, title: "Keuken + Woonkamer", icon: sofa,                 color: cyan,  event: vacuum_keuken_woonkamer }
+            - script.execute: { id: bp_act, slot: 2, title: Alles beneden,       icon: home-floor-1,          color: amber, event: vacuum_alles }
+            - script.execute: { id: bp_act, slot: 3, title: Pauze,               icon: pause,                 color: grey,  event: vacuum_pause }
+            - script.execute: { id: bp_act, slot: 5, title: Dock,                icon: power-plug,            color: green, event: vacuum_dock }
+
+      - if:
+          condition: { lambda: 'return page == "muziek";' }
+          then:
+            - script.execute: { id: bp_act, slot: 0, title: Play,     icon: play-pause,   color: green, event: media_play_pause }
+            - script.execute: { id: bp_act, slot: 1, title: Volgende, icon: skip-next,    color: cyan,  event: media_next }
+            - script.execute: { id: bp_act, slot: 2, title: Zachter,  icon: volume-minus, color: grey,  event: media_volume_down }
+            - script.execute: { id: bp_act, slot: 3, title: Harder,   icon: volume-plus,  color: grey,  event: media_volume_up }
+            - script.execute: { id: bp_act, slot: 5, title: Uit,      icon: power,        color: red,   event: media_off }
+
+  - id: render_clock
+    mode: restart
+    then:
+      - lvgl.label.update:
+          id: clock_label
+          text: !lambda 'return id(ha_time).now().strftime("%H:%M");'
+      # Built by hand rather than with strftime: %-d is a glibc extension that
+      # newlib on the ESP32 does not implement, so strftime fails and ESPHome
+      # returns the literal string "ERROR". %A and %B would give English names
+      # anyway, since there is no locale on board.
+      - lvgl.label.update:
+          id: date_label
+          text: !lambda |-
+            static const char *const DAGEN[] = {"zondag", "maandag", "dinsdag",
+                "woensdag", "donderdag", "vrijdag", "zaterdag"};
+            static const char *const MAANDEN[] = {"januari", "februari", "maart",
+                "april", "mei", "juni", "juli", "augustus", "september",
+                "oktober", "november", "december"};
+            auto t = id(ha_time).now();
+            if (!t.is_valid()) return std::string("");
+            return str_sprintf("%s %d %s", DAGEN[t.day_of_week - 1],
+                               t.day_of_month, MAANDEN[t.month - 1]);
+
+  # State, title, artist and artwork are four separate attributes that arrive
+  # separately, so everything is rendered from one place rather than each
+  # overwriting the others' idea of what is on screen.
+  #
+  # Two layouts: playing shows artwork on the left with the track beside it,
+  # anything else shows a single centred line. Widgets are shown and hidden
+  # rather than moved, so each layout is laid out once at design time.
+  - id: render_media
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              std::string s = id(media_state).state;
+              return s == "playing" || s == "paused";
+          then:
+            - lvgl.label.update:
+                id: media_title_label
+                text: !lambda |-
+                  return id(media_title).state.empty() ? std::string("--") : id(media_title).state;
+            - lvgl.label.update:
+                id: media_artist_label
+                text: !lambda 'return id(media_artist).state;'
+            - lvgl.widget.show: media_title_label
+            - lvgl.widget.show: media_artist_label
+            - lvgl.widget.show: elapsed_label
+            - lvgl.widget.show: progress_bar
+            - lvgl.widget.show: duration_label
+            - lvgl.widget.hide: media_idle_label
+            - script.execute: render_progress
+            - if:
+                condition:
+                  lambda: 'return !id(media_picture).state.empty();'
+                then:
+                  - online_image.set_url:
+                      id: cover_art
+                      url: !lambda 'return id(media_picture).state;'
+                  - lvgl.widget.show: cover_img
+                else:
+                  - lvgl.widget.hide: cover_img
+          else:
+            - lvgl.widget.hide: media_title_label
+            - lvgl.widget.hide: media_artist_label
+            - lvgl.widget.hide: elapsed_label
+            - lvgl.widget.hide: progress_bar
+            - lvgl.widget.hide: duration_label
+            - lvgl.widget.hide: cover_img
+            - lvgl.widget.show: media_idle_label
+
+  # Elapsed time is computed once into a global and then read by all three
+  # widgets, so the bar and the two readouts can never disagree.
+  - id: render_progress
+    mode: restart
+    then:
+      - lambda: |-
+          float pos = id(media_pos_base);
+          if (id(media_state).state == "playing")
+            pos += (millis() - id(media_pos_ref)) / 1000.0f;
+          float dur = id(media_duration).state;
+          if (!std::isnan(dur) && dur > 0 && pos > dur)
+            pos = dur;
+          id(media_elapsed) = pos < 0 ? 0 : pos;
+      - lvgl.bar.update:
+          id: progress_bar
+          value: !lambda |-
+            float dur = id(media_duration).state;
+            if (std::isnan(dur) || dur <= 0) return 0;
+            return (int) (1000.0f * id(media_elapsed) / dur);
+      - lvgl.label.update:
+          id: elapsed_label
+          text: !lambda |-
+            int s = (int) id(media_elapsed);
+            return str_sprintf("%d:%02d", s / 60, s % 60);
+      - lvgl.label.update:
+          id: duration_label
+          text: !lambda |-
+            float d = id(media_duration).state;
+            if (std::isnan(d) || d <= 0) return std::string("");
+            int s = (int) d;
+            return str_sprintf("%d:%02d", s / 60, s % 60);
+
+lvgl:
+  - id: main_lvgl
+    displays:
+      - main_display
+    # Rotation belongs to LVGL, not to the display -- see main_display.yaml.
+    rotation: 90
+    # LVGL renders into its own buffer a slice at a time; a quarter of the frame
+    # is plenty and leaves the PSRAM free.
+    buffer_size: 25%
+    bg_color: 0x000000
+    theme:
+      label:
+        text_color: 0xFFFFFF
+    pages:
+      - id: home_page
+        bg_color: 0x000000
+        scrollable: false
+        scrollbar_mode: "OFF"
+        widgets:
+          - label:
+              id: clock_label
+              align: TOP_MID
+              y: 10
+              text: "--:--"
+              text_font: font_clock
+          - label:
+              id: date_label
+              align: TOP_MID
+              y: 88
+              text: ""
+              text_font: font_date
+              text_color: 0x909090
+          - image:
+              id: cover_img
+              src: cover_art
+              align: BOTTOM_LEFT
+              x: 14
+              y: -16
+              hidden: true
+          # Aligned with the top of the cover, with the progress row underneath.
+          # SCROLL_CIRCULAR rather than DOT or WRAP: a long title keeps moving
+          # instead of being cut off, and stays on one line so the block below
+          # it never shifts. LVGL only animates when the text is actually wider
+          # than the label, so short titles sit still.
+          - label:
+              id: media_title_label
+              align: TOP_LEFT
+              x: 116
+              y: 136
+              text: ""
+              text_font: font_media
+              long_mode: SCROLL_CIRCULAR
+              width: 190
+              hidden: true
+          - label:
+              id: media_artist_label
+              align: TOP_LEFT
+              x: 116
+              y: 160
+              text: ""
+              text_font: font_media_sub
+              text_color: 0x909090
+              long_mode: SCROLL_CIRCULAR
+              width: 190
+              hidden: true
+
+          # Elapsed on the left of the bar, total on the right. The bar is
+          # 0..1000 rather than 0..100 so a long track still advances smoothly.
+          - label:
+              id: elapsed_label
+              align: TOP_LEFT
+              x: 116
+              y: 196
+              text: ""
+              text_font: font_footer
+              text_color: 0x909090
+              hidden: true
+          - bar:
+              id: progress_bar
+              align: TOP_LEFT
+              x: 154
+              y: 202
+              width: 114
+              height: 5
+              min_value: 0
+              max_value: 1000
+              value: 0
+              animated: false
+              bg_color: 0x303030
+              indicator:
+                bg_color: 0xFFFFFF
+              hidden: true
+          - label:
+              id: duration_label
+              align: TOP_LEFT
+              x: 272
+              y: 196
+              text: ""
+              text_font: font_footer
+              text_color: 0x909090
+              hidden: true
+          - label:
+              id: media_idle_label
+              align: BOTTOM_MID
+              y: -40
+              text: "Niets aan het spelen"
+              text_font: font_media
+              text_color: 0x909090
+
+      - id: power_page
+        bg_color: 0x000000
+        scrollable: false
+        scrollbar_mode: "OFF"
+        widgets:
+          - meter:
+              id: power_meter
+              align: TOP_MID
+              y: 0
+              height: 186
+              width: 186
+              bg_opa: TRANSP
+              border_width: 0
+              text_font: font_scale
+              text_color: 0x808080
+              scales:
+                # 220 degrees rather than a full 240: zero still sits dead
+                # centre at the top with export swinging left and import right,
+                # but the two ends of the arc ride high enough to clear the
+                # reading underneath. At 240 they reach down either side of it.
+                - range_from: -5000
+                  range_to: 5000
+                  angle_range: 220
+                  rotation: 160
+                  ticks:
+                    count: 21
+                    width: 2
+                    length: 7
+                    color: 0x505050
+                    major:
+                      stride: 5
+                      width: 3
+                      length: 12
+                      color: 0xA0A0A0
+                      label_gap: 5
+                  indicators:
+                    # Static background arcs: the half you are on says which way
+                    # the power is flowing without reading the number.
+                    - arc:
+                        color: 0x30C060
+                        width: 7
+                        start_value: -5000
+                        end_value: 0
+                    - arc:
+                        color: 0xE8A030
+                        width: 7
+                        start_value: 0
+                        end_value: 5000
+                    - line:
+                        id: power_needle
+                        width: 4
+                        color: 0xFFFFFF
+                        r_mod: -14
+                        value: 0
+          - label:
+              id: power_value
+              align: TOP_MID
+              y: 124
+              text: "--"
+              text_font: font_value
+          - label:
+              id: power_caption
+              align: TOP_MID
+              y: 176
+              text: "wachten op Home Assistant"
+              text_font: font_scale
+              text_color: 0x909090
+          - label:
+              id: footer
+              align: BOTTOM_MID
+              y: -6
+              text: "${name}"
+              text_font: font_footer
+              text_color: 0x505050

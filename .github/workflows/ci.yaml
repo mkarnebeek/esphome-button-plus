@@ -13,6 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # example/living-room-reference.yaml is deliberately absent: it is
+        # reference material lifted from a private repo and refers to a house
+        # base layer and Home Assistant entities that do not exist here, so it
+        # cannot validate. Do not add it.
         file:
           - example/demo.yaml
           - example/home-assistant.yaml

@@ -61,7 +61,10 @@ script:
 ```
 
 That is a working panel. For something you can flash and use with no Home
-Assistant at all, see [`example/demo.yaml`](example/demo.yaml).
+Assistant at all, see [`example/demo.yaml`](example/demo.yaml); for the panel
+this package was written for, warts and all, see
+[`example/living-room-reference.yaml`](example/living-room-reference.yaml) —
+including how album art and a drift-free media progress bar are done.
 
 This package configures **the panel, not the node** — you bring `esphome:`,
 `wifi:`/`ethernet:`, `api:`/`mqtt:`, `ota:` and `logger:` yourself.

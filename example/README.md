@@ -69,3 +69,64 @@ The `not_from` / `not_to` filters are not optional. An `event` entity goes
 `unavailable` when the device reboots and then re-reports its **last** event on
 reconnect — without those filters your lights come on by themselves every time
 the panel restarts.
+
+## `living-room-reference.yaml` — the real thing
+
+The panel this package was written for, published as reference. **It does not
+run as-is** — it still refers to a house base layer, Home Assistant entities and
+an image resizer that do not exist in this repository. Read it for the ideas,
+not as a starting point.
+
+Two parts of it are genuinely hard to work out from scratch:
+
+### Album art
+
+The panel cannot decode a full-size cover. ESPHome's JPEG decoder draws **one
+pixel per callback**, so a 640×640 image is 409,600 calls — about **2.3 seconds
+with the main loop stopped**. The expanders are polled from that same loop, so a
+button press landing in that window is lost entirely. At 88×88 it is 7,744 calls,
+roughly **43ms**, and the transfer drops from 80kB to under 2kB.
+
+Home Assistant serves album art at 640×640 and offers no way to ask for a
+smaller one, so the fix is a resizer on the LAN. Any will do; the reference uses
+[willnorris/imageproxy](https://github.com/willnorris/imageproxy):
+
+```yaml
+services:
+  imageproxy:
+    image: ghcr.io/willnorris/imageproxy:latest
+    command:
+      - -addr=0.0.0.0:8080
+      # Not optional. Without it this is an open relay that anyone on your LAN
+      # can use to fetch arbitrary URLs.
+      - -allowHosts=your-home-assistant,i.scdn.co
+    ports: ["8088:8080"]
+```
+
+Serve it over **plain HTTP on its own port, not behind a TLS reverse proxy**. A
+TLS handshake blocks the ESP32's main loop for hundreds of milliseconds — more
+than the decoding this exists to avoid.
+
+Two more traps, both in the reference file's comments:
+
+- `lvgl.image.update` with `src:` on `on_download_finished`, not
+  `lvgl.widget.update` (which rejects `src`). ESPHome builds the image
+  descriptor lazily, and the widget asks for it once at startup when the image
+  is still 0×0 — so without re-setting the source, the art downloads correctly
+  and never appears.
+- `buffer_size: 4096` on the `online_image`. The 64kB default pulls the whole
+  image in one loop iteration; smaller bites spread it across several.
+
+### A media progress bar that does not drift
+
+Polling the media player for its position does not work: it reports 0 for a
+whole track on some integrations, and loses the value on resume.
+
+Home Assistant gives you `media_position` **and** `media_position_updated_at`,
+the timestamp at which that position was measured. Hold both, and the elapsed
+time is arithmetic the device can do locally — which survives seeking, pausing
+and track changes, and needs no polling at all. See the `globals:` block and
+`render_progress`.
+
+The reference reads a Music Assistant entity rather than the Sonos one, because
+the Sonos entity reported position 0 for the whole track and lost it on resume.
