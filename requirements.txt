@@ -1,0 +1,3 @@
+# The ESPHome version this package is developed and tested against, and the one
+# CI uses. It matches the `esphome: min_version:` each entry point declares.
+esphome==2026.9.0
