@@ -9,6 +9,8 @@ sensors, two backlights — plus a page engine that runs **on the device**, so
 pressing a button changes the panel immediately whether or not Home Assistant is
 reachable.
 
+See also the blog post about this project: [https://blog.netk.nl/2026/button-plus-esphome/](https://blog.netk.nl/2026/button-plus-esphome/)
+
 > Unaffiliated third-party project. Not made, endorsed or supported by Button+.
 
 ## About this project
